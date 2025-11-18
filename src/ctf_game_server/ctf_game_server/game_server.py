@@ -2,8 +2,8 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
 
-from ctf_msgs.msg import RoverStatus, FlagState, GameState, JoinGameMessage, ServerToRoverMessage
-from ctf_msgs.srv import RequestGameState
+from ctf_msgs.msg import JoinGameMessage, ServerToRoverMessage
+#from ctf_msgs.srv import RequestGameState
 
 import functools
 import random

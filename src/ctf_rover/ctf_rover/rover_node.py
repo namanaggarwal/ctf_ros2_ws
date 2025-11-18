@@ -2,8 +2,8 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
 
-from ctf_msgs.msg import RoverStatus, FlagState, GameState, JoinGameMessage, ServerToRoverMessage
-from ctf_msgs.srv import RequestGameState
+from ctf_msgs.msg import JoinGameMessage, ServerToRoverMessage
+#from ctf_msgs.srv import RequestGameState
 
 class RoverNode(Node):
     def __init__(self, **kwargs):
@@ -19,6 +19,12 @@ class RoverNode(Node):
                 JoinGameMessage,
                 self.join_game_topic,
             )
+        
+        msg = JoinGameMessage()
+        msg.rover_name = self.rover_name
+        msg.rover_team_name = self.rover_team_name
+        self.publisher_join_game_topic.publish(msg)
+
         self.get_logger().info("Rover node for ROVER {} started, waiting for rover to join...".format(self.rover_name))
 
         self.server_to_rover_topic = "{}/server_to_rover".format(self.rover_name)
@@ -50,40 +56,8 @@ class RoverNode(Node):
 
         if command == 'INIT':
             local_planner_msg = commanded_pose
-            self.publisher_local_dynus_command_goal.publish(local_planner_msg)        
-        return
-
-
-    def join_game_callback(self, msg: JoinGameMessage):
-        if self.num_rovers == 4:
-            return
-        
-        rover_name = msg.rover_name
-        rover_team_name = msg.rover_team_name
-        rover_pose_topic = "/{}/world".format(rover_name)
-        if rover_name in self.rovers_list:
-            self.get_logger().warn(f"[GAMESERVER]: ROVER {rover_name} already joined.")
-            return
-        self.num_rovers += 1
-
-        self.rovers_list.append(rover_name)
-        self.rovers_info[rover_name] = {
-            'team': rover_team_name,
-            'pose_topic': rover_pose_topic
-        }
-        self.rovers_state[rover_name] = {
-            'pose': [],
-            'last_seen': []
-        }
-        self.get_logger().info("[GAMESERVER]: ROVER {} JOINED FROM TEAM {} ".format(rover_name, rover_team_name))
-
-        rover_pose_sub = self.create_subscription(
-                PoseStamped,
-                rover_pose_topic,
-                lambda msg, name=rover_name: self.vicon_callback(msg, name),
-                10,
-            )
-        self.rover_pose_subscriptions[rover_name] = rover_pose_sub
+            self.publisher_local_dynus_command_goal.publish(local_planner_msg)
+            self.game_play_callback() # While goal is in progress, go to goal and then replan on seeing the world state.
         return
 
     def seed(self, seed=None):
