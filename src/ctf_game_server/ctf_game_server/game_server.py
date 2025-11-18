@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
 
-from ctf_msgs.msg import RoverStatus, FlagState, GameState, JoinGameMessage
+from ctf_msgs.msg import RoverStatus, FlagState, GameState, JoinGameMessage, ServerToRoverMessage
 from ctf_msgs.srv import RequestGameState
 
 import functools
@@ -47,6 +47,7 @@ class GameServer(Node):
         self.rovers_info = {}
         self.rovers_state = {}
         self.rover_pose_subscriptions = {}
+        self.server_to_rover_publishers = {}
 
         self.join_game_topic = "/ctf/join"
         self.subscriber_join_game_topic = self.create_subscription(
@@ -56,34 +57,22 @@ class GameServer(Node):
                 10,
             )
         self.get_logger().info("GameServer started, waiting for rovers to join...")
-
-        rover_names = self.declare_parameter(
-            "rover_names", ["rover1", "rover2", "rover3", "rover4"]
-        ).value # RR03, RR04, RR05, RR06
+        
+        for rover in self.rovers_list:
+            server_to_rover_channel = self.rovers_info[rover]['server_to_rover_channel']
+            self.publisher_serve_to_rover = self.create_publisher(
+                    ServerToRoverMessage,
+                    server_to_rover_channel,
+                )
         
         """
-        for name in rover_names:
-            self.create_subscription(
-                PoseStamped,
-                f"/{name}/world",
-                lambda msg, name=name: self.vicon_callback(msg, name),
-                10,
-            )
-            
-            self.create_subscription(
-                PoseStamped,
-                f"/vicon/{name}/pose",
-                lambda msg, name=name: self.vicon_callback(msg, name),
-                10,
-            )
-        """
-
         # Service for rover to request game state
         self.srv = self.create_service(
             RequestGameState,
             "ctf/get_state",
             self.handle_get_state
         )
+        """
 
     def join_game_callback(self, msg: JoinGameMessage):
         if self.num_rovers == 4:
@@ -92,6 +81,7 @@ class GameServer(Node):
         rover_name = msg.rover_name
         rover_team_name = msg.rover_team_name
         rover_pose_topic = "/{}/world".format(rover_name)
+        server_to_rover_topic = f"/{rover_name}/server_to_rover"
         if rover_name in self.rovers_list:
             self.get_logger().warn(f"[GAMESERVER]: ROVER {rover_name} already joined.")
             return
@@ -100,7 +90,8 @@ class GameServer(Node):
         self.rovers_list.append(rover_name)
         self.rovers_info[rover_name] = {
             'team': rover_team_name,
-            'pose_topic': rover_pose_topic
+            'pose_topic': rover_pose_topic,
+            'server_to_rover_topic': server_to_rover_topic
         }
         self.rovers_state[rover_name] = {
             'pose': [],
@@ -115,14 +106,18 @@ class GameServer(Node):
                 10,
             )
         self.rover_pose_subscriptions[rover_name] = rover_pose_sub
-        return
 
-    def seed(self, seed=None):
-        self.rngs = make_seeded_rngs(seed)
-        self._seed = self.rngs["actual_seed"]
-        self.np_random = self.rngs["np_random"]
-        self.torch_rng = self.rngs["torch_rng"]
-        return [self._seed]
+        server_to_rover_pub = self.create_publisher(ServerToRoverMessage, server_to_rover_topic, 10)
+        self.server_to_rover_publishers[rover_name] = server_to_rover_pub
+        
+        if self.num_rovers == 4:
+            self.start_game_callback()
+        return
+    
+    def start_game_callback(self):
+        # Send initial commanded poses to start the game.
+        # Wait for response.
+        return
 
     def vicon_callback(self, msg, name):
         """Update rover poses from mocap system."""
@@ -134,6 +129,13 @@ class GameServer(Node):
         self.get_logger().debug(f"[GAMESERVER] Updated pose for {name} at sec={now.sec} nsec={now.nanosec}")
         self.get_logger().debug(f"[GAMESERVER] Latest pose for {name} at sec={now.sec} nsec={now.nanosec}: {pose}")
         return
+    
+    def seed(self, seed=None):
+        self.rngs = make_seeded_rngs(seed)
+        self._seed = self.rngs["actual_seed"]
+        self.np_random = self.rngs["np_random"]
+        self.torch_rng = self.rngs["torch_rng"]
+        return [self._seed]
 
 def main(args=None):
     rclpy.init(args=args)
