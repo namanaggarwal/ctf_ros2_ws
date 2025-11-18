@@ -65,6 +65,8 @@ class GameServer(Node):
                     server_to_rover_channel,
                 )
         
+        self.game_started = False
+
         """
         # Service for rover to request game state
         self.srv = self.create_service(
@@ -81,7 +83,7 @@ class GameServer(Node):
         rover_name = msg.rover_name
         rover_team_name = msg.rover_team_name
         rover_pose_topic = "/{}/world".format(rover_name)
-        server_to_rover_topic = f"/{rover_name}/server_to_rover"
+        server_to_rover_topic = "/{}/server_to_rover".format(rover_name)
         if rover_name in self.rovers_list:
             self.get_logger().warn(f"[GAMESERVER]: ROVER {rover_name} already joined.")
             return
@@ -109,7 +111,7 @@ class GameServer(Node):
 
         server_to_rover_pub = self.create_publisher(ServerToRoverMessage, server_to_rover_topic, 10)
         self.server_to_rover_publishers[rover_name] = server_to_rover_pub
-        
+
         if self.num_rovers == 4:
             self.start_game_callback()
         return
@@ -117,6 +119,23 @@ class GameServer(Node):
     def start_game_callback(self):
         # Send initial commanded poses to start the game.
         # Wait for response.
+        self.get_logger().info("[GAMESERVER] All rovers joined. Sending initial poses...")
+        initial_poses = self.compute_initial_poses()  # method to define starting positions
+
+        for rover_name, pose in initial_poses.items():
+            msg = ServerToRoverMessage()
+            msg.command = 'INIT'
+            msg.commanded_pose = pose
+            self.server_to_rover_publishers[rover_name].publish(msg)
+            self.get_logger().info(f"[GAMESERVER] Sent initial pose to {rover_name}")
+
+        # Wait for confirmation from rovers or add a short delay
+        # Then mark game as started
+        self.game_started = True
+        self.get_logger().info("[GAMESERVER] Game started!")
+        return
+    
+    def compute_initial_poses(self):
         return
 
     def vicon_callback(self, msg, name):

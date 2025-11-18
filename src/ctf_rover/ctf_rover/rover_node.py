@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
 
-from ctf_msgs.msg import RoverStatus, FlagState, GameState, JoinGameMessage
+from ctf_msgs.msg import RoverStatus, FlagState, GameState, JoinGameMessage, ServerToRoverMessage
 from ctf_msgs.srv import RequestGameState
 
 class RoverNode(Node):
@@ -10,17 +10,6 @@ class RoverNode(Node):
         super().__init__("ctf")
         self.grid_size = 10
         self.ctf_player_config = kwargs.get('ctf_player_config', '2v2')
-
-        # Subscriptions for each rover pose from VICON
-        # (You can generate these dynamically)
-        """
-        Rover_names: Updated from rover subscriptions, subscribing and participating in the game.
-        """
-        self.num_rovers = 0
-        self.rovers_list = []
-        self.rovers_info = {}
-        self.rovers_state = {}
-        self.rover_pose_subscriptions = {}
 
         self.rover_name = 'RR03' # Read from a config file / YAML file.
         self.rover_team_name = 'RED' # Read from a config file / YAML file.
@@ -32,12 +21,38 @@ class RoverNode(Node):
             )
         self.get_logger().info("Rover node for ROVER {} started, waiting for rover to join...".format(self.rover_name))
 
+        self.server_to_rover_topic = "{}/server_to_rover".format(self.rover_name)
+        self.subscriber_server_to_rover_topic = self.create_subscription(
+                ServerToRoverMessage,
+                self.server_to_rover_topic,
+                self.server_to_rover_callback,
+                10,
+            )
+        
+        self.local_dynus_pub_goal_topic = '/{}/term_goal'.format(self.rover_name)
+        self.publisher_local_dynus_command_goal = self.create_publisher(
+                PoseStamped,
+                self.local_dynus_pub_goal_topic,
+            )
+        
+        """
         # Service for rover to request game state
         self.srv = self.create_service(
             RequestGameState,
             "ctf/get_state",
             self.handle_get_state
         )
+        """
+
+    def server_to_rover_callback(self, msg: ServerToRoverMessage):
+        command = msg.command
+        commanded_pose = msg.commanded_pose
+
+        if command == 'INIT':
+            local_planner_msg = commanded_pose
+            self.publisher_local_dynus_command_goal.publish(local_planner_msg)        
+        return
+
 
     def join_game_callback(self, msg: JoinGameMessage):
         if self.num_rovers == 4:
