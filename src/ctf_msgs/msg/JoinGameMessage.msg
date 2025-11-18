@@ -1,0 +1,2 @@
+string rover_name
+string rover_team_name
