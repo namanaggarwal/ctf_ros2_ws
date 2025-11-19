@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'rover_node = ctf_game_server.rover_node:main'
+            'rover_node = ctf_rover.rover_node:main'
         ],
     },
 )
