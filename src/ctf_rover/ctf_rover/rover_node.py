@@ -11,6 +11,7 @@ class RoverNode(Node):
         self.grid_size = 10
         self.ctf_player_config = kwargs.get('ctf_player_config', '2v2')
 
+        # Pending: declare_parameters for rover_name and rover_team_name.
         self.rover_name = 'RR03' # Read from a config file / YAML file.
         self.rover_team_name = 'RED' # Read from a config file / YAML file.
 
@@ -49,6 +50,9 @@ class RoverNode(Node):
             self.handle_get_state
         )
         """
+        # INIT: Reach goal and pose.
+        # START GAME: Generate waypoint and publish to goal term. Use a VICON callback that generates a new waypoint once the previous goal is reached: compare current VICON position to the current published goal_term.
+        # Game Server declares Game Termination on flag reaching or truncation. For example, play for 15 seconds and see if flag reached, if not truncate and kill and restart a new instance of the game.
 
     def server_to_rover_callback(self, msg: ServerToRoverMessage):
         command = msg.command
