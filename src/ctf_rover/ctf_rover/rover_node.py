@@ -12,7 +12,10 @@ class RoverNode(Node):
         self.ctf_player_config = kwargs.get('ctf_player_config', '2v2')
 
         # Pending: declare_parameters for rover_name and rover_team_name.
-        self.rover_name = 'RR03' # Read from a config file / YAML file.
+        # self.rover_name = 'RR03' # Read from a config file / YAML file.
+        vehtype = os.getenv("VEHTYPE")
+        vehnum = os.getenv("VEHNUM")
+        self.rover_name = vehtype + vehnum
         self.rover_team_name = 'RED' # Read from a config file / YAML file.
 
         self.join_game_topic = "/ctf/join"
