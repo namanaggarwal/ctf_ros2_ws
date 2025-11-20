@@ -8,9 +8,9 @@ find_package(builtin_interfaces REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/JoinGameMessage.msg"
   "msg/GameState.msg"
-  "msg/RoverCommand.msg"
+  "msg/JoinGameMessage.msg"
+  "msg/ServerToRoverMessage.msg"
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
 )
 

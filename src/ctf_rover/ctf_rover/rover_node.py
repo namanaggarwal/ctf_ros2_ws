@@ -19,6 +19,7 @@ class RoverNode(Node):
         self.publisher_join_game_topic = self.create_publisher(
                 JoinGameMessage,
                 self.join_game_topic,
+                10
             )
         
         msg = JoinGameMessage()
@@ -40,6 +41,7 @@ class RoverNode(Node):
         self.publisher_local_dynus_command_goal = self.create_publisher(
                 PoseStamped,
                 self.local_dynus_pub_goal_topic,
+                10
             )
         
         """
