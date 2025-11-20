@@ -4,6 +4,7 @@ from geometry_msgs.msg import PoseStamped
 
 from ctf_msgs.msg import JoinGameMessage, ServerToRoverMessage
 #from ctf_msgs.srv import RequestGameState
+import os
 
 class RoverNode(Node):
     def __init__(self, **kwargs):
