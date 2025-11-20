@@ -53,6 +53,9 @@ class RoverNode(Node):
         # INIT: Reach goal and pose.
         # START GAME: Generate waypoint and publish to goal term. Use a VICON callback that generates a new waypoint once the previous goal is reached: compare current VICON position to the current published goal_term.
         # Game Server declares Game Termination on flag reaching or truncation. For example, play for 15 seconds and see if flag reached, if not truncate and kill and restart a new instance of the game.
+        # Maintain a queue of waypoints: pop and add.
+        ### Idea: Receeding horizon prediction for fast planning and then replanning every now and then depending on the game being played: with slow adversaries, can be faster. With fast adversaries, need to be strategic.
+        ### VICON Callback: either waypoint reach within goal tolerance or if collision avoidance activated with an adversary agent, respawn.
 
     def server_to_rover_callback(self, msg: ServerToRoverMessage):
         command = msg.command
