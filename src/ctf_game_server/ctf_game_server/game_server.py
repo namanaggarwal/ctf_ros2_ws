@@ -78,7 +78,7 @@ class GameServer(Node):
             RequestGameState,
             "ctf/get_state",
             self.handle_get_state
-        )
+        ) 
         """
 
     def join_game_callback(self, msg: JoinGameMessage):
