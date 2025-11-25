@@ -155,8 +155,8 @@ class GameServer(Node):
         return
     
     def compute_initial_poses(self):
-        RR03_init_pose = ()
-        RR06_init_pose = ()
+        RR03_init_pose = (+2.8, -1.4, 0)
+        RR06_init_pose = (+0, +1.4, 0)
         pose_dict = {'RR03': RR03_init_pose, 'RR06': RR06_init_pose}
         return pose_dict #self.reset()
     
