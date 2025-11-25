@@ -70,7 +70,7 @@ class RoverNode(Node):
         if command == 'INIT':
             local_planner_msg = commanded_pose
             self.publisher_local_dynus_command_goal.publish(local_planner_msg)
-            self.game_play_callback() # While goal is in progress, go to goal and then replan on seeing the world state.
+            # self.game_play_callback() # While goal is in progress, go to goal and then replan on seeing the world state.
         return
 
     def seed(self, seed=None):
