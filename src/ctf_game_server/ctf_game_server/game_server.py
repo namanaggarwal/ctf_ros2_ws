@@ -141,7 +141,10 @@ class GameServer(Node):
         return
     
     def compute_initial_poses(self):
-        return self.reset()
+        RR03_init_pose = ()
+        RR06_init_pose = ()
+        pose_dict = {'RR03': RR03_init_pose, 'RR06': RR06_init_pose}
+        return pose_dict #self.reset()
     
     def reset(self):
         blue_team_init_xys = []
