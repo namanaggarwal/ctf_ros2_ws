@@ -130,7 +130,21 @@ class GameServer(Node):
         for rover_name, pose in initial_poses.items():
             msg = ServerToRoverMessage()
             msg.command = 'INIT'
-            msg.commanded_pose = pose
+
+            pose_msg = PoseStamped()
+            pose_msg.header.stamp = self.get_clock().now().to_msg()
+            pose_msg.header.frame_id = "world"
+
+            pose_msg.pose.position.x = pose[0]
+            pose_msg.pose.position.y = pose[1]
+            pose_msg.pose.position.z = pose[2]
+
+            pose_msg.pose.orientation.x = 0.0
+            pose_msg.pose.orientation.y = 0.0
+            pose_msg.pose.orientation.z = 0.0
+            pose_msg.pose.orientation.w = 1.0
+
+            msg.commanded_pose = pose_msg
             self.server_to_rover_publishers[rover_name].publish(msg)
             self.get_logger().info(f"[GAMESERVER] Sent initial pose to {rover_name}")
 

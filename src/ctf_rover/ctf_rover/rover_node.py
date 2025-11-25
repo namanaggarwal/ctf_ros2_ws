@@ -41,7 +41,7 @@ class RoverNode(Node):
                 10,
             )
         
-        self.local_dynus_pub_goal_topic = '/{}/term_goal'.format(self.rover_name)
+        self.local_dynus_pub_goal_topic = '/{}/global_term_goal'.format(self.rover_name) #'/{}/term_goal'.format(self.rover_name)
         self.publisher_local_dynus_command_goal = self.create_publisher(
                 PoseStamped,
                 self.local_dynus_pub_goal_topic,
