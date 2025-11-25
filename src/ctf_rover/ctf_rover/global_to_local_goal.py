@@ -43,7 +43,7 @@ class GlobalToLocalGoal(Node):
         # create publisher to local goal topic for dynus
         self.local_goal_pub = self.create_publisher(
             PoseStamped,
-            "/RR04/term_goal",
+            f"/{self.rover_name}/term_goal",
             10
         )
 
