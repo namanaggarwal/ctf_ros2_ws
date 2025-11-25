@@ -43,6 +43,7 @@ class GameServer(Node):
         Rover_names: Updated from rover subscriptions, subscribing and participating in the game.
         """
         self.num_rovers = 0
+        self.total_rovers = 2
         self.rovers_list = []
         self.rovers_info = {}
         self.rovers_state = {}
@@ -82,7 +83,7 @@ class GameServer(Node):
         """
 
     def join_game_callback(self, msg: JoinGameMessage):
-        if self.num_rovers == 4:
+        if self.num_rovers == self.total_rovers:
             return
         
         rover_name = msg.rover_name
@@ -117,7 +118,7 @@ class GameServer(Node):
         server_to_rover_pub = self.create_publisher(ServerToRoverMessage, server_to_rover_topic, 10)
         self.server_to_rover_publishers[rover_name] = server_to_rover_pub
 
-        if self.num_rovers == 4:
+        if self.num_rovers == self.total_rovers:
             self.start_game_callback()
         return
 
@@ -155,8 +156,8 @@ class GameServer(Node):
         return
     
     def compute_initial_poses(self):
-        RR03_init_pose = (+2.8, -1.4, 0)
-        RR06_init_pose = (+0, +1.4, 0)
+        RR03_init_pose = (+2.8, -1.4, 0.)
+        RR06_init_pose = (+0., +1.4, 0.)
         pose_dict = {'RR03': RR03_init_pose, 'RR06': RR06_init_pose}
         return pose_dict #self.reset()
     
