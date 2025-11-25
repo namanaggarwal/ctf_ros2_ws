@@ -20,7 +20,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'rover_node = ctf_rover.rover_node:main'
+            'rover_node = ctf_rover.rover_node:main',
+            'global_to_local_goal = ctf_rover.global_to_local_goal:main',
+            'publish_global_goal = ctf_rover.publish_global_goal:main',
         ],
     },
 )
