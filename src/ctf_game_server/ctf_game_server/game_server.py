@@ -5,6 +5,7 @@ from geometry_msgs.msg import PoseStamped
 from ctf_msgs.msg import JoinGameMessage, ServerToRoverMessage
 #from ctf_msgs.srv import RequestGameState
 
+import copy
 import functools
 import random
 import copy
@@ -39,6 +40,10 @@ class GameServer(Node):
         self.grid_size = 10
         self.ctf_player_config = kwargs.get('ctf_player_config', '2v2')
         self.ctf_env = None # !? --> move CTF custom environment to within the same directory and import CustomCTF_v1.
+        self.blue_init_spawn_y_lim = 2 # Measured from bottom of the grid.
+        self.possible_init_headings_blue_team = [0, 1, 2, 3] # possible init headings = (0, 45, 90, 135)
+        self.red_init_spawn_y_lim = 2 # Measured from top of the grid.
+        self.possible_init_headings_red_team = [0, 7, 6, 5] # possible init headings = (0, -45, -90, -135)
 
         # Subscriptions for each rover pose from VICON
         # (You can generate these dynamically)
@@ -55,8 +60,17 @@ class GameServer(Node):
 
         self.blue_agents = []
         self.red_agents = []
-        self.num_agents_blue_team = None
-        self.num_agents_red_team = None
+        self.num_agents_blue_team = 0
+        self.num_agents_red_team = 0
+        
+        self.seed = kwargs.get('seed', 3758)
+        self.seed(seed=self.seed)
+
+        self.ctf_red_agents = ['Red_0', 'Red_1']
+        self.ctf_blue_agents = ['Blue_0', 'Blue_1']
+        self.agents = copy.deepcopy(self.ctf_blue_agents) + copy.deepcopy(self.ctf_red_agents)
+        self.rr_to_ctf_agent_map = {}
+        self.state = {}
 
         self.join_game_topic = "/ctf/join"
         self.subscriber_join_game_topic = self.create_subscription(
@@ -92,18 +106,25 @@ class GameServer(Node):
         
         rover_name = msg.rover_name
         rover_team_name = msg.rover_team_name
+        assert rover_team_name.startswith('R') or rover_team_name.startswith('B')
+
         rover_pose_topic = "/{}/world".format(rover_name)
         server_to_rover_topic = "/{}/server_to_rover".format(rover_name)
         if rover_name in self.rovers_list:
             self.get_logger().warn(f"[GAMESERVER]: ROVER {rover_name} already joined.")
             return
+        
+        self.rr_to_ctf_agent_map[rover_name] = self.ctf_red_agents[self.num_agents_red_team] if rover_team_name.startswith('R') else self.ctf_blue_agents[self.num_agents_blue_team]
         self.num_rovers += 1
+        if rover_team_name.startswith('R'): self.num_agents_red_team += 1
+        elif rover_team_name.startswith('B'): self.num_agents_blue_team += 1
 
         self.rovers_list.append(rover_name)
         self.rovers_info[rover_name] = {
             'team': rover_team_name,
             'pose_topic': rover_pose_topic,
-            'server_to_rover_topic': server_to_rover_topic
+            'server_to_rover_topic': server_to_rover_topic,
+            'ctf_agent_name': self.rr_to_ctf_agent_map[rover_name]
         }
         self.rovers_state[rover_name] = {
             'pose': [],
@@ -123,35 +144,49 @@ class GameServer(Node):
         self.server_to_rover_publishers[rover_name] = server_to_rover_pub
 
         if self.num_rovers == 4:
+            self.pre_start_game_utils()
             self.start_game_callback()
+        return
+
+    def pre_start_game_utils(self):
+        inv_map = {}
+        for rr_name, ctf_agent in self.rr_to_ctf_agent_map.items():
+            inv_map[ctf_agent] = rr_name
+        self.ctf_agent_to_rr_map = copy.deepcopy(inv_map)
         return
 
     def start_game_callback(self):
         # Send initial commanded poses to start the game.
         # Wait for response.
         self.get_logger().info("[GAMESERVER] All rovers joined. Sending initial poses...")
-        initial_poses = self.compute_initial_poses()  # method to define starting positions
+        state = self.compute_initial_poses()  # method to define starting positions
 
-        for rover_name, pose in initial_poses.items():
+        for ctf_agent, pose in state.items():
+            rr_name = self.ctf_agent_to_rr_map[ctf_agent]
             msg = ServerToRoverMessage()
             msg.command = 'INIT'
+
+            discrete_x, discrete_y, discrete_heading = pose
+            p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(discrete_x, discrete_y, discrete_heading)
+            q = GameServer.yaw_to_quaternion(p_vicon_heading)
+
 
             pose_msg = PoseStamped()
             pose_msg.header.stamp = self.get_clock().now().to_msg()
             pose_msg.header.frame_id = "world"
 
-            pose_msg.pose.position.x = pose[0]
-            pose_msg.pose.position.y = pose[1]
-            pose_msg.pose.position.z = pose[2]
+            pose_msg.pose.position.x = p_vicon_pos[0]
+            pose_msg.pose.position.y = p_vicon_pos[1]
+            pose_msg.pose.position.z = p_vicon_pos[2] # equal to 0.
 
-            pose_msg.pose.orientation.x = 0.0
-            pose_msg.pose.orientation.y = 0.0
-            pose_msg.pose.orientation.z = 0.0
-            pose_msg.pose.orientation.w = 1.0
+            pose_msg.pose.orientation.x = q[0]
+            pose_msg.pose.orientation.y = q[1]
+            pose_msg.pose.orientation.z = q[2]
+            pose_msg.pose.orientation.w = q[3]
 
             msg.commanded_pose = pose_msg
-            self.server_to_rover_publishers[rover_name].publish(msg)
-            self.get_logger().info(f"[GAMESERVER] Sent initial pose to {rover_name}")
+            self.server_to_rover_publishers[rr_name].publish(msg)
+            self.get_logger().info(f"[GAMESERVER] Sent initial pose to {rr_name}")
 
         # Wait for confirmation from rovers or add a short delay
         # Then mark game as started
@@ -160,11 +195,33 @@ class GameServer(Node):
         return
     
     def compute_initial_poses(self):
+        self.reset()
+        """
         RR03_init_pose = (+2.8, -1.4, 0.)
         RR06_init_pose = (+0., +1.4, 0.)
         pose_dict = {'RR03': RR03_init_pose, 'RR06': RR06_init_pose}
-        return pose_dict #self.reset()
+        """
+        state = copy.deepcopy(self.state)
+        return state
     
+    def _sample_init_heading(self, agent_team, x, y):
+        assert agent_team == "Blue" or agent_team == "Red"
+        if agent_team == "Blue":
+            possible_init_headings = copy.deepcopy(self.possible_init_headings_blue_team)
+            if x == 0: possible_init_headings.remove(3)
+            if x == self.grid_size - 1:
+                possible_init_headings.remove(0)
+                possible_init_headings.remove(1)
+            heading = self.np_random.choice(possible_init_headings) #np.random.choice(possible_init_headings)
+        elif agent_team == "Red":
+            possible_init_headings = copy.deepcopy(self.possible_init_headings_red_team)
+            if x == 0: possible_init_headings.remove(5)
+            if x == 1:
+                possible_init_headings.remove(0)
+                possible_init_headings.remove(7)
+            heading = self.np_random.choice(possible_init_headings)
+        return heading
+
     def reset(self):
         blue_team_init_xys = []
         for agent_iter, blue_agent_num in enumerate(range(self.num_agents_blue_team)):
@@ -200,11 +257,9 @@ class GameServer(Node):
             rand_theta = self._sample_init_heading(agent_team="Red", x=rand_x, y=rand_y)
             self.state["Red_{}".format(red_agent_num)] = np.array([rand_x, rand_y, rand_theta])
 
-        #global_state = [self.state[agent] for agent in self.agents]
-        #obs = {agent: global_state for agent in self.agents} # global_state dict. The prisoner guard example on ParallelEnv has this as a tuple, and you have this as a List currently.
-        obs = self._observations()
+        #obs = self._observations() # !!!!!! --> method self._observations() not copied from CustomCTF_v0 to GameServer class.
+        obs = {agent: {} for agent in self.agents}
         info = {agent: {} for agent in self.agents}
-        #print("self.agents: {}".format(self.agents))
         return obs, info
 
     @staticmethod
@@ -233,6 +288,17 @@ class GameServer(Node):
         p_vicon_heading = p_yaw_sim_to_vicon
 
         return (p_vicon_pos, p_vicon_heading)
+
+    @staticmethod
+    def yaw_to_quaternion(yaw):
+        """
+        Convert a yaw (rotation about Z) to a geometry_msgs.Quaternion
+        """
+        from scipy.spatial.transform import Rotation as R_scipy
+        from geometry_msgs.msg import Quaternion
+        rot = R_scipy.from_euler('z', yaw)  # 'z' = yaw rotation
+        q = rot.as_quat()  # returns [x, y, z, w]
+        return Quaternion(x=q[0], y=q[1], z=q[2], w=q[3])
 
     def discrete_grid_abstraction_to_highbay_coordinates(self, discrete_x, discrete_y, heading):
         assert discrete_x in range(self.grid_size)
