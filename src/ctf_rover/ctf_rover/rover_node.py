@@ -47,6 +47,8 @@ class RoverNode(Node):
                 self.local_dynus_pub_goal_topic,
                 10
             )
+
+        self.get_logger().info("ROVER NODE INITIALIZED")
         
         """
         # Service for rover to request game state
@@ -61,16 +63,17 @@ class RoverNode(Node):
         # Game Server declares Game Termination on flag reaching or truncation. For example, play for 15 seconds and see if flag reached, if not truncate and kill and restart a new instance of the game.
         # Maintain a queue of waypoints: pop and add.
         ### Idea: Receeding horizon prediction for fast planning and then replanning every now and then depending on the game being played: with slow adversaries, can be faster. With fast adversaries, need to be strategic.
-        ### VICON Callback: either waypoint reach within goal tolerance or if collision avoidance activated with an adversary agent, respawn.
-
+        ### VICON Callback: either waypoint reach within goal tolerance or if collision avoidance activated with an adversary agent, respawn.        
     def server_to_rover_callback(self, msg: ServerToRoverMessage):
         command = msg.command
         commanded_pose = msg.commanded_pose
+        self.get_logger().info("ENTERING server_to_rover_callback ...")
 
         if command == 'INIT':
+            self.get_logger().info("PUBLISHING GOAL ...")
             local_planner_msg = commanded_pose
             self.publisher_local_dynus_command_goal.publish(local_planner_msg)
-            self.game_play_callback() # While goal is in progress, go to goal and then replan on seeing the world state.
+            # self.game_play_callback() # While goal is in progress, go to goal and then replan on seeing the world state.
         return
 
     def seed(self, seed=None):
