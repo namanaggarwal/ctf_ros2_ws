@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
+from dynus_interfaces.msg import State
 
 from ctf_msgs.msg import JoinGameMessage, ServerToRoverMessage
 #from ctf_msgs.srv import RequestGameState
@@ -170,6 +171,28 @@ class GameServer(Node):
             p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(discrete_x, discrete_y, discrete_heading)
             q = GameServer.yaw_to_quaternion(p_vicon_heading)
 
+            vel_vicon_xy = np.array([np.cos(p_vicon_heading), np.sin(p_vicon_heading)])
+            
+            goal_msg = State()
+            # set position
+            goal_msg.pos.x = p_vicon_pos[0]
+            goal_msg.pos.y = p_vicon_pos[1]
+            goal_msg.pos.z = p_vicon_pos[2]
+
+            eps_vel = 0.001
+            # set velocity
+            goal_msg.vel.x = eps_vel*vel_vicon_xy[0]
+            goal_msg.vel.y = eps_vel*vel_vicon_xy[1]
+            goal_msg.vel.z = 0.
+
+            # identity
+            goal_msg.quat.x = 0.0
+            goal_msg.quat.y = 0.0
+            goal_msg.quat.z = 0.0
+            goal_msg.quat.w = 1.0
+
+            msg.commanded_goal = goal_msg
+            """
             pose_msg = PoseStamped()
             pose_msg.header.stamp = self.get_clock().now().to_msg()
             pose_msg.header.frame_id = "world"
@@ -182,8 +205,9 @@ class GameServer(Node):
             pose_msg.pose.orientation.y = q[1]
             pose_msg.pose.orientation.z = q[2]
             pose_msg.pose.orientation.w = q[3]
-
+            
             msg.commanded_pose = pose_msg
+            """
             self.server_to_rover_publishers[rr_name].publish(msg)
             self.get_logger().info(f"[GAMESERVER] Sent initial pose to {rr_name}")
 
@@ -220,6 +244,27 @@ class GameServer(Node):
                 possible_init_headings.remove(7)
             heading = self.np_random.choice(possible_init_headings)
         return heading
+
+    @staticmethod
+    def _heading_to_direction_vector(heading):
+        vec = None
+        if heading == 0:
+            vec = np.array([ +1, 0 ])
+        elif heading == 1:
+            vec = np.array([ +1, +1 ])
+        elif heading == 2:
+            vec = np.array([ 0, +1 ])
+        elif heading == 3:
+            vec = np.array([ -1, +1 ])
+        elif heading == 4:
+            vec = np.array([ -1, 0 ])
+        elif heading == 5:
+            vec = np.array([ -1, -1 ])
+        elif heading == 6:
+            vec = np.array([ 0, -1 ])
+        elif heading == 7:
+            vec = np.array([ +1, -1 ])
+        return vec
 
     def reset(self):
         blue_team_init_xys = []

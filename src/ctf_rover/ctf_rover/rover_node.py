@@ -5,6 +5,7 @@ from geometry_msgs.msg import PoseStamped
 from ctf_msgs.msg import JoinGameMessage, ServerToRoverMessage
 #from ctf_msgs.srv import RequestGameState
 import os
+import numpy as np
 
 class RoverNode(Node):
     def __init__(self, **kwargs):
@@ -66,25 +67,12 @@ class RoverNode(Node):
         ### VICON Callback: either waypoint reach within goal tolerance or if collision avoidance activated with an adversary agent, respawn.        
     def server_to_rover_callback(self, msg: ServerToRoverMessage):
         command = msg.command
-        commanded_pose = msg.commanded_pose
-        
-        x, y, z = commanded_pose.pose.position.x, commanded_pose.pose.position.y, commanded_pose.pose.position.z
-                    pose_msg.pose.position.x = p_vicon_pos[0]
-            pose_msg.pose.position.y = p_vicon_pos[1]
-            pose_msg.pose.position.z = p_vicon_pos[2] # equal to 0.
-
-            pose_msg.pose.orientation.x = q[0]
-            pose_msg.pose.orientation.y = q[1]
-            pose_msg.pose.orientation.z = q[2]
-            pose_msg.pose.orientation.w = q[3]
-
-
-
+        commanded_goal = msg.commanded_goal        
         self.get_logger().info("ENTERING server_to_rover_callback ...")
 
         if command == 'INIT':
             self.get_logger().info("PUBLISHING GOAL ...")
-            local_planner_msg = commanded_pose
+            local_planner_msg = commanded_goal
             self.publisher_local_dynus_command_goal.publish(local_planner_msg)
             # self.game_play_callback() # While goal is in progress, go to goal and then replan on seeing the world state.
         return
@@ -95,6 +83,27 @@ class RoverNode(Node):
         self.np_random = self.rngs["np_random"]
         self.torch_rng = self.rngs["torch_rng"]
         return [self._seed]
+    
+    @staticmethod
+    def _heading_to_direction_vector(heading):
+        vec = None
+        if heading == 0:
+            vec = np.array([ +1, 0 ])
+        elif heading == 1:
+            vec = np.array([ +1, +1 ])
+        elif heading == 2:
+            vec = np.array([ 0, +1 ])
+        elif heading == 3:
+            vec = np.array([ -1, +1 ])
+        elif heading == 4:
+            vec = np.array([ -1, 0 ])
+        elif heading == 5:
+            vec = np.array([ -1, -1 ])
+        elif heading == 6:
+            vec = np.array([ 0, -1 ])
+        elif heading == 7:
+            vec = np.array([ +1, -1 ])
+        return vec
 
     def vicon_callback(self, msg, name):
         """Update rover poses from mocap system."""

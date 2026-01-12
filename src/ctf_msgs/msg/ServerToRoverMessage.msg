@@ -4,4 +4,5 @@
 string command
 
 # Commanded pose for the rover
-geometry_msgs/PoseStamped commanded_pose
+# geometry_msgs/PoseStamped commanded_pose
+dynus_interfaces/State commanded_goal
