@@ -170,7 +170,6 @@ class GameServer(Node):
             p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(discrete_x, discrete_y, discrete_heading)
             q = GameServer.yaw_to_quaternion(p_vicon_heading)
 
-
             pose_msg = PoseStamped()
             pose_msg.header.stamp = self.get_clock().now().to_msg()
             pose_msg.header.frame_id = "world"

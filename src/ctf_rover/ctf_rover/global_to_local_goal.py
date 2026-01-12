@@ -5,6 +5,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+from dynus_interfaces.msg import State
 
 import tf2_ros
 from tf2_ros import TransformException
@@ -34,7 +35,7 @@ class GlobalToLocalGoal(Node):
 
         # create subscriber to global goal topic
         self.global_goal_sub = self.create_subscription(
-            PoseStamped,
+            State,
             f"/{self.rover_name}/global_term_goal",
             self.global_goal_callback,
             10
@@ -42,7 +43,7 @@ class GlobalToLocalGoal(Node):
 
         # create publisher to local goal topic for dynus
         self.local_goal_pub = self.create_publisher(
-            PoseStamped,
+            State,
             f"/{self.rover_name}/term_goal",
             10
         )
@@ -63,7 +64,7 @@ class GlobalToLocalGoal(Node):
         try:
 
             # get transform from world to init pose
-            # X_world_RR04
+            # X_world_RR
             tf = self.tf_buffer.lookup_transform(
                 self.global_frame,             
                 self.initial_frame,              
@@ -80,12 +81,12 @@ class GlobalToLocalGoal(Node):
         q = tf.transform.rotation
         r = R.from_quat([q.x, q.y, q.z, q.w])
 
-        X_world_rr04 = np.eye(4)
-        X_world_rr04[:3, :3] = r.as_matrix()
-        X_world_rr04[:3, 3] = np.array([t.x, t.y, t.z])
+        X_world_rr = np.eye(4)
+        X_world_rr[:3, :3] = r.as_matrix()
+        X_world_rr[:3, 3] = np.array([t.x, t.y, t.z])
 
-        # X world wrt map = inverse(X RR04 wrt world)
-        self.X_map_world = np.linalg.inv(X_world_rr04)
+        # X world wrt map = inverse(X RR wrt world)
+        self.X_map_world = np.linalg.inv(X_world_rr)
 
         # stop the timer
         self.init_timer.cancel()
@@ -93,13 +94,13 @@ class GlobalToLocalGoal(Node):
 
 
     # convert global goal to local goal
-    def global_goal_callback(self, msg: PoseStamped):
+    def global_goal_callback(self, msg: State):
         if self.X_map_world is None:
             self.get_logger().warn("world to map not initialized yet. Ignoring goal.")
             return
 
         # get global pose
-        p = msg.pose.position
+        p = msg.pos
         global_point = np.array([p.x, p.y, p.z, 1.0])
 
         # transform into map (local) frame
@@ -108,20 +109,35 @@ class GlobalToLocalGoal(Node):
         # and X_globalFrame_globalGoal = global_point
         local_point = self.X_map_world @ global_point
 
+        # get global velocity
+        v = msg.vel
+        global_vel = np.array([v.x, v.y, v.z])
+
+        R_map_world = self.X_map_world[:3, :3]  # rotation only
+        local_vel = R_map_world @ global_vel
+
         # create local goal
-        local_goal = PoseStamped()
+        local_goal = State()
         local_goal.header.stamp = msg.header.stamp
         local_goal.header.frame_id = self.local_frame
 
-        local_goal.pose.position.x = local_point[0]
-        local_goal.pose.position.y = local_point[1]
-        local_goal.pose.position.z = local_point[2]
+        # set local position
+        local_goal.pos.x = local_point[0]
+        local_goal.pos.y = local_point[1]
+        local_goal.pos.z = local_point[2]
 
-        local_goal.pose.orientation.x = 0.0
-        local_goal.pose.orientation.y = 0.0
-        local_goal.pose.orientation.z = 0.0
-        local_goal.pose.orientation.w = 1.0
+        # set local velocity
+        local_goal.vel.x = local_vel[0]
+        local_goal.vel.y = local_vel[1]
+        local_goal.vel.z = local_vel[2]
 
+        # ignore yaw (already set with velocity vector)
+        local_goal.quat.x = 0.0
+        local_goal.quat.y = 0.0
+        local_goal.quat.z = 0.0
+        local_goal.quat.w = 1.0
+
+        # publish local goal
         self.local_goal_pub.publish(local_goal)
         self.get_logger().info(f"Published local goal {local_point}")
 

@@ -67,6 +67,19 @@ class RoverNode(Node):
     def server_to_rover_callback(self, msg: ServerToRoverMessage):
         command = msg.command
         commanded_pose = msg.commanded_pose
+        
+        x, y, z = commanded_pose.pose.position.x, commanded_pose.pose.position.y, commanded_pose.pose.position.z
+                    pose_msg.pose.position.x = p_vicon_pos[0]
+            pose_msg.pose.position.y = p_vicon_pos[1]
+            pose_msg.pose.position.z = p_vicon_pos[2] # equal to 0.
+
+            pose_msg.pose.orientation.x = q[0]
+            pose_msg.pose.orientation.y = q[1]
+            pose_msg.pose.orientation.z = q[2]
+            pose_msg.pose.orientation.w = q[3]
+
+
+
         self.get_logger().info("ENTERING server_to_rover_callback ...")
 
         if command == 'INIT':
