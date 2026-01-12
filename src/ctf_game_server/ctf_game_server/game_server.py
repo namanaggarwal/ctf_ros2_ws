@@ -36,6 +36,7 @@ class GameServer(Node):
         super().__init__("ctf")
         self.grid_size = 10
         self.ctf_player_config = kwargs.get('ctf_player_config', '2v2')
+        self.ctf_env = None # !? --> move CTF custom environment to within the same directory and import CustomCTF_v1.
 
         # Subscriptions for each rover pose from VICON
         # (You can generate these dynamically)
@@ -49,10 +50,10 @@ class GameServer(Node):
         self.rover_pose_subscriptions = {}
         self.server_to_rover_publishers = {}
 
-        self.blue_agents = [agent for agent in self.rovers_list if self.rovers_info[agent]['team'] == 'BLUE']
-        self.red_agents = [agent for agent in self.rovers_list if self.rovers_info[agent]['team'] == 'RED']
-        self.num_agents_blue_team = len(self.blue_agents)
-        self.num_agents_red_team = len(self.red_agents)
+        self.blue_agents = []
+        self.red_agents = []
+        self.num_agents_blue_team = None
+        self.num_agents_red_team = None
 
         self.join_game_topic = "/ctf/join"
         self.subscriber_join_game_topic = self.create_subscription(
@@ -118,6 +119,11 @@ class GameServer(Node):
         self.server_to_rover_publishers[rover_name] = server_to_rover_pub
 
         if self.num_rovers == 4:
+            self.blue_agents = [agent for agent in self.rovers_list if self.rovers_info[agent]['team'] == 'BLUE']
+            self.red_agents = [agent for agent in self.rovers_list if self.rovers_info[agent]['team'] == 'RED']
+            self.num_agents_blue_team = len(self.blue_agents)
+            self.num_agents_red_team = len(self.red_agents)
+            
             self.start_game_callback()
         return
 
@@ -202,8 +208,25 @@ class GameServer(Node):
         #print("self.agents: {}".format(self.agents))
         return obs, info
     
-    def discrete_grid_abstraction_to_highbay_coordinates(self, discrete_x, discrete_y):
-        
+    def discrete_grid_abstraction_to_highbay_coordinates(self, discrete_x, discrete_y, heading):
+        assert discrete_x in range(self.grid_size)
+        assert discrete_y in range(self.grid_size)
+        assert heading in range(8)
+        a = 0.762 # meters
+        delta_x = a / 2. # meters
+        delta_y = a / 2. # meters
+
+        x, y = a*discrete_x, a*discrete_y # game ctf discrete frame
+
+        x_vicon, y_vicon = 4*a + delta_x, 4*a + delta_y # vicon coords in game ctf discrete frame
+
+        # game ctf -> vicon frame: 90 degrees counter-clockwise
+        # !? : Convert above to quaternion rotation and build tf from this rotation and x_vicon, y_vicon.
+        # !?2: Then convert x, y from game_ctf_frame to vicon_frame.
+
+        heading_in_radians = heading * np.pi / 4. # game_ctf_frame
+        # !? convert above to vicon frame.
+
         return
 
     def vicon_callback(self, msg, name):
