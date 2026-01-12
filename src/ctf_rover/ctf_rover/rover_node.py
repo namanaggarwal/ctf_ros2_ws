@@ -181,7 +181,7 @@ class RoverNode(Node):
             local_goal.quat.w = 1.0
 
 
-            self.publisher_local_dynus_command_goal.publish(local_planner_msg)
+            self.publisher_local_dynus_command_goal.publish(local_goal)
             # self.game_play_callback() # While goal is in progress, go to goal and then replan on seeing the world state.
         return
 
