@@ -5,6 +5,9 @@ from dynus_interfaces.msg import State
 
 from ctf_msgs.msg import JoinGameMessage, ServerToRoverMessage
 #from ctf_msgs.srv import RequestGameState
+
+import tf2_ros
+from tf2_ros import TransformException
 import os
 import numpy as np
 
@@ -56,6 +59,18 @@ class RoverNode(Node):
                 10
             )
 
+        # create tf buffer for global goal
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+
+        # init global goal variables
+        self.X_map_world = None
+
+        self.init_timer = self.create_timer(0.2, self.initialize_tf) # timer to init tf
+        self.global_frame = "world"
+        self.initial_frame = self.rover_name
+        self.local_frame = f"{self.rover_name}/map"
+
         self.get_logger().info("ROVER NODE INITIALIZED")
         
         """
@@ -72,14 +87,99 @@ class RoverNode(Node):
         # Maintain a queue of waypoints: pop and add.
         ### Idea: Receeding horizon prediction for fast planning and then replanning every now and then depending on the game being played: with slow adversaries, can be faster. With fast adversaries, need to be strategic.
         ### VICON Callback: either waypoint reach within goal tolerance or if collision avoidance activated with an adversary agent, respawn.        
+    
+    # initialize tf from world to map
+    def initialize_tf(self):
+
+        # return if already initialized
+        if self.X_map_world is not None:
+            return
+
+        # try to get the transform
+        try:
+
+            # get transform from world to init pose
+            # X_world_RR
+            tf = self.tf_buffer.lookup_transform(
+                self.global_frame,             
+                self.initial_frame,              
+                rclpy.time.Time()
+            )
+        except TransformException:
+            self.get_logger().info("Waiting for initial TF")
+            return 
+
+        self.get_logger().info("Successfully got TF!")
+
+        # Convert TF to 4x4 matrix
+        t = tf.transform.translation
+        q = tf.transform.rotation
+        r = R.from_quat([q.x, q.y, q.z, q.w])
+
+        X_world_rr = np.eye(4)
+        X_world_rr[:3, :3] = r.as_matrix()
+        X_world_rr[:3, 3] = np.array([t.x, t.y, t.z])
+
+        # X world wrt map = inverse(X RR wrt world)
+        self.X_map_world = np.linalg.inv(X_world_rr)
+
+        # stop the timer
+        self.init_timer.cancel()
+        self.get_logger().info("Fixed world to map transform saved.")
+    
     def server_to_rover_callback(self, msg: ServerToRoverMessage):
         command = msg.command
         commanded_goal = msg.commanded_goal        
         self.get_logger().info("ENTERING server_to_rover_callback ...")
 
         if command == 'INIT':
+            if self.X_map_world is None:
+                self.get_logger().warn("world to map not initialized yet. Ignoring goal.")
+                return
+
             self.get_logger().info("PUBLISHING GOAL ...")
-            local_planner_msg = commanded_goal
+            # local_planner_msg = commanded_goal
+            global_planner_msg = commanded_goal
+
+            # get global pose
+            p = global_planner_msg.pos
+            global_point = np.array([p.x, p.y, p.z, 1.0])
+
+            # transform into map (local) frame
+            # X_localFrame_localGoal = X_localFrame_globalFrame @ X_globalFrame_globalGoal
+            # where X_localFrame_globalFrame = X_map_world
+            # and X_globalFrame_globalGoal = global_point
+            local_point = self.X_map_world @ global_point
+
+            # get global velocity
+            v = global_planner_msg.vel
+            global_vel = np.array([v.x, v.y, v.z])
+
+            R_map_world = self.X_map_world[:3, :3]  # rotation only
+            local_vel = R_map_world @ global_vel
+
+            # create local goal
+            local_goal = State()
+            local_goal.header.stamp = global_planner_msg.header.stamp
+            local_goal.header.frame_id = self.local_frame
+
+            # set local position
+            local_goal.pos.x = local_point[0]
+            local_goal.pos.y = local_point[1]
+            local_goal.pos.z = local_point[2]
+
+            # set local velocity
+            local_goal.vel.x = local_vel[0]
+            local_goal.vel.y = local_vel[1]
+            local_goal.vel.z = local_vel[2]
+
+            # ignore yaw (already set with velocity vector)
+            local_goal.quat.x = 0.0
+            local_goal.quat.y = 0.0
+            local_goal.quat.z = 0.0
+            local_goal.quat.w = 1.0
+
+
             self.publisher_local_dynus_command_goal.publish(local_planner_msg)
             # self.game_play_callback() # While goal is in progress, go to goal and then replan on seeing the world state.
         return

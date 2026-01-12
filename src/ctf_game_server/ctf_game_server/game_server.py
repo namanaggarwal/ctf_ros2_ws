@@ -53,7 +53,7 @@ class GameServer(Node):
         Rover_names: Updated from rover subscriptions, subscribing and participating in the game.
         """
         self.num_rovers = 0
-        self.total_rovers = 2
+        self.total_rovers = 4
         self.rovers_list = []
         self.rovers_info = {}
         self.rovers_state = {}
@@ -145,7 +145,7 @@ class GameServer(Node):
         server_to_rover_pub = self.create_publisher(ServerToRoverMessage, server_to_rover_topic, 10)
         self.server_to_rover_publishers[rover_name] = server_to_rover_pub
 
-        if self.num_rovers == 4:
+        if self.num_rovers == self.total_rovers:
             self.pre_start_game_utils()
             self.start_game_callback()
         return
@@ -210,8 +210,8 @@ class GameServer(Node):
             msg.commanded_pose = pose_msg
             """
             self.server_to_rover_publishers[rr_name].publish(msg)
-            self.get_logger().info(f"[GAMESERVER] Sent initial pose to {rr_name}")
-
+            self.get_logger().info(f"[GAMESERVER] Sent initial pose {pose} to {rr_name}")
+    
         # Wait for confirmation from rovers or add a short delay
         # Then mark game as started
         self.game_started = True
