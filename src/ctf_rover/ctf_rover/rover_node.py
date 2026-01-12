@@ -19,7 +19,13 @@ class RoverNode(Node):
         vehtype = os.getenv("VEHTYPE")
         vehnum = os.getenv("VEHNUM")
         self.rover_name = vehtype + vehnum
-        self.rover_team_name = 'RED' # Read from a config file / YAML file.
+
+        self.declare_parameter("team", "RED")
+
+        self.rover_team_name = self.get_parameter("team").value
+
+        self.get_logger().info(f"TEAM = {self.rover_team_name}")
+        # self.rover_team_name = 'RED' # Read from a config file / YAML file.
 
         self.join_game_topic = "/ctf/join"
         self.publisher_join_game_topic = self.create_publisher(
