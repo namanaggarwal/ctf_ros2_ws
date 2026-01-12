@@ -12,26 +12,27 @@ import random
 import copy
 import numpy as np
 # import torch
-# from gymnasium.utils import seeding
+from gymnasium.utils import seeding
 
-import tf.transformations as tft
+# import tf.transformations as tft
 
 def make_seeded_rngs(seed: int):
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
+    #torch.manual_seed(seed)
     
+    """
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-
+    """
     np_random, actual_seed = seeding.np_random(seed)
-    torch_rng = torch.Generator().manual_seed(actual_seed)
+    torch_rng = None #torch.Generator().manual_seed(actual_seed)
     return {
         "np_random": np_random,
-        "torch_rng": torch_rng,
+        "torch_rng": None,
         "actual_seed": actual_seed
     }
 
@@ -64,8 +65,8 @@ class GameServer(Node):
         self.num_agents_blue_team = 0
         self.num_agents_red_team = 0
         
-        self.seed = kwargs.get('seed', 3758)
-        self.seed(seed=self.seed)
+        self._seed = kwargs.get('seed', 3758)
+        self.seed(seed=self._seed)
 
         self.ctf_red_agents = ['Red_0', 'Red_1']
         self.ctf_blue_agents = ['Blue_0', 'Blue_1']
@@ -345,12 +346,6 @@ class GameServer(Node):
         return Quaternion(x=q[0], y=q[1], z=q[2], w=q[3])
 
     def discrete_grid_abstraction_to_highbay_coordinates(self, discrete_x, discrete_y, heading):
-        assert discrete_x in range(self.grid_size)
-        assert discrete_y in range(self.grid_size)
-        assert heading in range(8)
-        a = 0.762 # meters
-        delta_x = a / 2. # meters
-        delta_y = a / 2. # meters
 
         x, y = a*discrete_x, a*discrete_y # game ctf discrete frame
 
@@ -361,7 +356,7 @@ class GameServer(Node):
         # !?2: Then convert x, y from game_ctf_frame to vicon_frame.
 
         heading_in_radians = heading * np.pi / 4. # game_ctf_frame
-        # !? convert above to vicon frame.
+        # !? convert above to vicon frame.self._seed
 
         q = tft.quaternion_from_euler(0.0, 0.0, -1.57079632679)
 

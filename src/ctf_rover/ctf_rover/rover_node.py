@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
+from dynus_interfaces.msg import State
 
 from ctf_msgs.msg import JoinGameMessage, ServerToRoverMessage
 #from ctf_msgs.srv import RequestGameState
