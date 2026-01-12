@@ -12,6 +12,8 @@ import numpy as np
 # import torch
 # from gymnasium.utils import seeding
 
+import tf.transformations as tft
+
 def make_seeded_rngs(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -63,6 +65,7 @@ class GameServer(Node):
                 self.join_game_callback,
                 10,
             )
+        """Pending: rover_name hardware to rover_name in sim mapping: for eg. rro3:red_01, rr06:blue_02"""
         self.get_logger().info("GameServer started, waiting for rovers to join...")
         
         for rover in self.rovers_list:
@@ -203,7 +206,34 @@ class GameServer(Node):
         info = {agent: {} for agent in self.agents}
         #print("self.agents: {}".format(self.agents))
         return obs, info
-    
+
+    @staticmethod
+    def sim_frame_to_vicon_frame(discrete_x, discrete_y, discrete_heading):
+        a = 0.762 # meters
+        delta_x = a / 2. # meters
+        delta_y = a / 2. # meters
+
+        import numpy as np
+        yaw = -np.pi/2
+        R = np.array([
+            [ np.cos(yaw), -np.sin(yaw), 0],
+            [ np.sin(yaw),  np.cos(yaw), 0],
+            [          0,           0, 1]
+        ])
+        tx, ty, tz = 4*a + delta_y, -(4*a + delta_x), 0. # t_from_sim_to_vicon is position of sim origin in Vicon frame:
+        t = np.array([tx, ty, tz])
+
+        p_sim_pos = a*discrete_x, a*discrete_y, 0.
+        p_sim_yaw = (+np.pi/4.) * discrete_heading
+
+        p_pos_sim_to_vicon = R@p_sim_pos + t
+        p_yaw_sim_to_vicon = p_sim_yaw - yaw
+
+        p_vicon_pos = p_pos_sim_to_vicon
+        p_vicon_heading = p_yaw_sim_to_vicon
+
+        return (p_vicon_pos, p_vicon_heading)
+
     def discrete_grid_abstraction_to_highbay_coordinates(self, discrete_x, discrete_y, heading):
         assert discrete_x in range(self.grid_size)
         assert discrete_y in range(self.grid_size)
@@ -222,6 +252,25 @@ class GameServer(Node):
 
         heading_in_radians = heading * np.pi / 4. # game_ctf_frame
         # !? convert above to vicon frame.
+
+        q = tft.quaternion_from_euler(0.0, 0.0, -1.57079632679)
+
+        from geometry_msgs.msg import TransformStamped
+
+        t = TransformStamped()
+        t.header.frame_id = "sim_frame"      # parent
+        t.child_frame_id  = "vicon_frame"    # child
+
+        # translation of vicon origin expressed in sim_frame
+        t.transform.translation.x = tx
+        t.transform.translation.y = ty
+        t.transform.translation.z = tz
+
+        # rotation: +90° clockwise (−π/2 yaw)
+        t.transform.rotation.x = 0.0
+        t.transform.rotation.y = 0.0
+        t.transform.rotation.z = -0.70710678
+        t.transform.rotation.w =  0.70710678
 
         return
 
