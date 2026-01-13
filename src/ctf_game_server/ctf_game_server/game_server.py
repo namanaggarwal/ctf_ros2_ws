@@ -65,7 +65,9 @@ class GameServer(Node):
         self.num_agents_blue_team = 0
         self.num_agents_red_team = 0
         
-        self._seed = kwargs.get('seed', 3758)
+        self.declare_parameter("seed", 3116)
+
+        self._seed = self.get_parameter("seed").value
         self.seed(seed=self._seed)
 
         self.ctf_red_agents = ['Red_0', 'Red_1']
@@ -210,8 +212,9 @@ class GameServer(Node):
             msg.commanded_pose = pose_msg
             """
             self.server_to_rover_publishers[rr_name].publish(msg)
-            self.get_logger().info(f"[GAMESERVER] Sent initial pose {pose} to {rr_name}")
-    
+            self.get_logger().info(f"[GAMESERVER] Sent initial sim_frame pose {pose} to {rr_name}")
+            self.get_logger().info(f"[GAMESERVER] Sent initial world pose {goal_msg.pos.x, goal_msg.pos.y, goal_msg.pos.z} to {rr_name}")
+
         # Wait for confirmation from rovers or add a short delay
         # Then mark game as started
         self.game_started = True
