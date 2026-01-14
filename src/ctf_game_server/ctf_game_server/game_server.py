@@ -5,6 +5,10 @@ from dynus_interfaces.msg import State
 
 from ctf_msgs.msg import JoinGameMessage, ServerToRoverMessage
 #from ctf_msgs.srv import RequestGameState
+from geometry_msgs.msg import TransformStamped
+from scipy.spatial.transform import Rotation as R_scipy
+import tf2_ros
+from visualization_msgs.msg import Marker
 
 import copy
 import functools
@@ -65,9 +69,7 @@ class GameServer(Node):
         self.num_agents_blue_team = 0
         self.num_agents_red_team = 0
         
-        self.declare_parameter("seed", 3116)
-
-        self._seed = self.get_parameter("seed").value
+        self._seed = kwargs.get('seed', 3758)
         self.seed(seed=self._seed)
 
         self.ctf_red_agents = ['Red_0', 'Red_1']
@@ -94,6 +96,11 @@ class GameServer(Node):
                 )
         
         self.game_started = False
+
+        # debug iniital pose flag, tests code with just one rover
+        self.DEBUG_INIT_POSE = False
+
+        self.marker_pub = self.create_publisher(Marker, 'initial_pose_marker', 10)
 
         """
         # Service for rover to request game state
@@ -147,6 +154,11 @@ class GameServer(Node):
         server_to_rover_pub = self.create_publisher(ServerToRoverMessage, server_to_rover_topic, 10)
         self.server_to_rover_publishers[rover_name] = server_to_rover_pub
 
+        if self.DEBUG_INIT_POSE and self.num_rovers == 1:
+            self.get_logger().info("[DEBUG INIT POSE]: Starting game with one rover.")
+            self.pre_start_game_utils()
+            self.start_game_callback()
+
         if self.num_rovers == self.total_rovers:
             self.pre_start_game_utils()
             self.start_game_callback()
@@ -158,6 +170,51 @@ class GameServer(Node):
             inv_map[ctf_agent] = rr_name
         self.ctf_agent_to_rr_map = copy.deepcopy(inv_map)
         return
+    
+    def publish_marker(self, pose, rover_name):
+        """
+        Publish a sphere marker at the given pose.
+        pose: np.array or list [x, y, z, yaw] or [x, y, z]
+        rover_name: str, used for marker namespace
+        """
+        marker = Marker()
+        marker.header.frame_id = "world"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        
+        marker.ns = rover_name
+        marker.id = 0
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        
+        # Set position
+        marker.pose.position.x = pose[0]
+        marker.pose.position.y = pose[1]
+        marker.pose.position.z = pose[2] if len(pose) > 2 else 0.0
+        
+        # No orientation for a simple sphere
+        marker.pose.orientation.x = 0.0
+        marker.pose.orientation.y = 0.0
+        marker.pose.orientation.z = 0.0
+        marker.pose.orientation.w = 1.0
+        
+        # Scale of the sphere
+        marker.scale.x = 0.3  # meters
+        marker.scale.y = 0.3
+        marker.scale.z = 0.3
+        
+        # Color (just pick a color, e.g., red)
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 0.0
+        marker.color.a = 1.0  # alpha
+        
+        # Lifetime 0 = forever
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+        
+        # Publish
+        self.marker_pub.publish(marker)
+
 
     def start_game_callback(self):
         # Send initial commanded poses to start the game.
@@ -166,9 +223,13 @@ class GameServer(Node):
         state = self.compute_initial_poses()  # method to define starting positions
 
         for ctf_agent, pose in state.items():
+            self.get_logger().info(f"AGENT = {ctf_agent}")
             rr_name = self.ctf_agent_to_rr_map[ctf_agent]
             msg = ServerToRoverMessage()
             msg.command = 'INIT'
+
+            if self.DEBUG_INIT_POSE:
+                self.get_logger().info(f"[DEBUG INIT POSE] Received init pose for {ctf_agent}: {pose}")
 
             discrete_x, discrete_y, discrete_heading = pose
             p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(discrete_x, discrete_y, discrete_heading)
@@ -212,8 +273,9 @@ class GameServer(Node):
             msg.commanded_pose = pose_msg
             """
             self.server_to_rover_publishers[rr_name].publish(msg)
-            self.get_logger().info(f"[GAMESERVER] Sent initial sim_frame pose {pose} to {rr_name}")
-            self.get_logger().info(f"[GAMESERVER] Sent initial world pose {goal_msg.pos.x, goal_msg.pos.y, goal_msg.pos.z} to {rr_name}")
+            self.publish_marker(p_vicon_pos, rr_name)
+            self.get_logger().info(f"[GAMESERVER] Sent initial pose (vicon frame) {p_vicon_pos} to {rr_name}")
+
 
         # Wait for confirmation from rovers or add a short delay
         # Then mark game as started
@@ -271,6 +333,7 @@ class GameServer(Node):
         return vec
 
     def reset(self):
+
         blue_team_init_xys = []
         for agent_iter, blue_agent_num in enumerate(range(self.num_agents_blue_team)):
             if agent_iter == 0:
@@ -290,10 +353,17 @@ class GameServer(Node):
 
         red_team_init_xys = []
         for agent_iter, red_agent_num in enumerate(range(self.num_agents_red_team)):
+
+            # set agent initial positions to a random x, y, theta position
             if agent_iter == 0:
                 rand_x = self.np_random.integers(0, self.grid_size)
                 rand_y = self.np_random.integers(self.grid_size - self.red_init_spawn_y_lim - 1, self.grid_size)
                 rand_theta = self._sample_init_heading(agent_team="Red", x=rand_x, y=rand_y)
+
+                if self.DEBUG_INIT_POSE:
+                    rand_x, rand_y, rand_theta = -3., -1., 0.
+                    self.get_logger().info(f"[DEBUG INIT POSE]: Red agent init pose (game frame) set to ({rand_x}, {rand_y}, {rand_theta}).")
+
                 self.state["Red_{}".format(red_agent_num)] = np.array([rand_x, rand_y, rand_theta])
                 red_team_init_xys.append((rand_x, rand_y))
                 continue
@@ -310,8 +380,31 @@ class GameServer(Node):
         info = {agent: {} for agent in self.agents}
         return obs, info
 
-    @staticmethod
-    def sim_frame_to_vicon_frame(discrete_x, discrete_y, discrete_heading):
+    def publish_sim_to_vicon_tf(self, t, R):
+
+        rot = R_scipy.from_matrix(R)
+        q = rot.as_quat()
+
+        self.tf_broadcaster = tf2_ros.StaticTransformBroadcaster(self)
+
+        t_msg = TransformStamped()
+        t_msg.header.stamp = self.get_clock().now().to_msg()
+        t_msg.header.frame_id = "world"
+        t_msg.child_frame_id = "sim"
+
+        t_msg.transform.translation.x = t[0]
+        t_msg.transform.translation.y = t[1]
+        t_msg.transform.translation.z = t[2]
+
+        t_msg.transform.rotation.x = q[0]
+        t_msg.transform.rotation.y = q[1]
+        t_msg.transform.rotation.z = q[2]
+        t_msg.transform.rotation.w = q[3]
+
+        self.tf_broadcaster.sendTransform(t_msg)
+
+    # @staticmethod
+    def sim_frame_to_vicon_frame(self, discrete_x, discrete_y, discrete_heading):
         a = 0.762 # meters
         delta_x = a / 2. # meters
         delta_y = a / 2. # meters
@@ -326,7 +419,10 @@ class GameServer(Node):
         tx, ty, tz = 4*a + delta_y, -(4*a + delta_x), 0. # t_from_sim_to_vicon is position of sim origin in Vicon frame:
         t = np.array([tx, ty, tz])
 
-        p_sim_pos = a*discrete_x, a*discrete_y, 0.
+        self.publish_sim_to_vicon_tf(t, R)
+
+        p_sim_pos = np.array([a*discrete_x, a*discrete_y, 0.])
+
         p_sim_yaw = (+np.pi/4.) * discrete_heading
 
         p_pos_sim_to_vicon = R@p_sim_pos + t
@@ -334,6 +430,9 @@ class GameServer(Node):
 
         p_vicon_pos = p_pos_sim_to_vicon
         p_vicon_heading = p_yaw_sim_to_vicon
+
+        if self.DEBUG_INIT_POSE:
+            self.get_logger().info(f"[DEBUG INIT POSE]: Converted pose (vicon frame) = {p_vicon_pos}")
 
         return (p_vicon_pos, p_vicon_heading)
 
