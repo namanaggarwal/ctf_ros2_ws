@@ -134,9 +134,11 @@ class RoverNode(Node):
         self.get_logger().info("ENTERING server_to_rover_callback ...")
 
         if command == 'INIT':
-            if self.X_map_world is None:
-                self.get_logger().warn("world to map not initialized yet. Ignoring goal.")
-                return
+            # if self.X_map_world is None:
+            #     self.get_logger().warn("world to map not initialized yet. Ignoring goal.")
+            #     return
+
+            self.initialize_tf()
 
             self.get_logger().info("PUBLISHING GOAL ...")
             # local_planner_msg = commanded_goal
@@ -144,6 +146,9 @@ class RoverNode(Node):
 
             # get global pose
             p = global_planner_msg.pos
+
+            self.get_logger().info(f"[ROVER] Converting Global Goal [{p.x}, {p.y}, {p.z}] to local frame")
+
             global_point = np.array([p.x, p.y, p.z, 1.0])
 
             # transform into map (local) frame
@@ -180,6 +185,7 @@ class RoverNode(Node):
             local_goal.quat.z = 0.0
             local_goal.quat.w = 1.0
 
+            self.get_logger().info(f"[ROVER] Publishing local goal [{local_point[0]}, {local_point[1]}, {local_point[2]}]")
 
             self.publisher_local_dynus_command_goal.publish(local_goal)
             # self.game_play_callback() # While goal is in progress, go to goal and then replan on seeing the world state.
