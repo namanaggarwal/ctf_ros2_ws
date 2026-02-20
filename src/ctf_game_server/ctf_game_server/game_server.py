@@ -43,7 +43,7 @@ def make_seeded_rngs(seed: int):
 class GameServer(Node):
     def __init__(self, **kwargs):
         super().__init__("ctf")
-        self.grid_size = 10
+        self.grid_size = 8
         self.ctf_player_config = kwargs.get('ctf_player_config', '2v2')
         self.ctf_env = None # !? --> move CTF custom environment to within the same directory and import CustomCTF_v1.
         self.blue_init_spawn_y_lim = 2 # Measured from bottom of the grid.
@@ -69,7 +69,7 @@ class GameServer(Node):
         self.num_agents_blue_team = 0
         self.num_agents_red_team = 0
         
-        self._seed = kwargs.get('seed', 3758)
+        self._seed = kwargs.get('seed', 0)
         self.seed(seed=self._seed)
 
         self.ctf_red_agents = ['Red_0', 'Red_1']
@@ -203,6 +203,7 @@ class GameServer(Node):
         marker.scale.z = 0.3
         
         # Color (just pick a color, e.g., red)
+        
         marker.color.r = 1.0
         marker.color.g = 0.0
         marker.color.b = 0.0
@@ -410,7 +411,7 @@ class GameServer(Node):
         delta_y = a / 2. # meters
 
         import numpy as np
-        yaw = -np.pi/2
+        yaw = np.pi/2
         R = np.array([
             [ np.cos(yaw), -np.sin(yaw), 0],
             [ np.sin(yaw),  np.cos(yaw), 0],
