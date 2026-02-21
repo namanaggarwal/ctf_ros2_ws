@@ -126,10 +126,9 @@ class RoverNode(Node):
         X_world_rr[:3, :3] = r.as_matrix()
         X_world_rr[:3, 3] = np.array([t.x, t.y, t.z])
 
-        # publish transform
+        # publish transform for map --> init pose (world --> RR0X/map)
         T_world_map = TransformStamped()
 
-        # Read message content and assign it 
         T_world_map.header.stamp = self.get_clock().now().to_msg()
         T_world_map.header.frame_id = 'world'
         T_world_map.child_frame_id = self.local_frame
