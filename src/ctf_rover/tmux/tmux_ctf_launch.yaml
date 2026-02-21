@@ -46,4 +46,4 @@ windows:
       # Onboard mighty
       - shell_command:
         - source /home/swarm/code/ctf_ros2_ws/install/setup.bash
-        - sleep 5; ros2 run ctf_rover rover_node --ros-args -p team:="BLUE"
+        - sleep 5; ros2 run ctf_rover rover_node --ros-args -p team:="RED"

@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, TransformStamped
 from dynus_interfaces.msg import State
 from scipy.spatial.transform import Rotation as R
 
@@ -9,6 +9,8 @@ from ctf_msgs.msg import JoinGameMessage, ServerToRoverMessage
 
 import tf2_ros
 from tf2_ros import TransformException
+from tf2_ros import TransformBroadcaster
+from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 import os
 import numpy as np
 
@@ -63,6 +65,9 @@ class RoverNode(Node):
         # create tf buffer for global goal
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+
+        # create tf broadcaster for map --> init pose (world --> RR0X/map)
+        self.world_map_broadcaster = StaticTransformBroadcaster(self)
 
         # init global goal variables
         self.X_map_world = None
@@ -120,6 +125,25 @@ class RoverNode(Node):
         X_world_rr = np.eye(4)
         X_world_rr[:3, :3] = r.as_matrix()
         X_world_rr[:3, 3] = np.array([t.x, t.y, t.z])
+
+        # publish transform
+        T_world_map = TransformStamped()
+
+        # Read message content and assign it 
+        T_world_map.header.stamp = self.get_clock().now().to_msg()
+        T_world_map.header.frame_id = 'world'
+        T_world_map.child_frame_id = self.local_frame
+
+        T_world_map.transform.translation.x = t.x
+        T_world_map.transform.translation.y = t.y
+        T_world_map.transform.translation.z = t.z # 0.0?
+
+        T_world_map.transform.rotation.x = q.x
+        T_world_map.transform.rotation.y = q.y
+        T_world_map.transform.rotation.z = q.z
+        T_world_map.transform.rotation.w = q.w
+
+        self.world_map_broadcaster.sendTransform(T_world_map)
 
         # X world wrt map = inverse(X RR wrt world)
         self.X_map_world = np.linalg.inv(X_world_rr)
