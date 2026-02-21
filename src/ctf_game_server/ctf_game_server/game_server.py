@@ -57,7 +57,7 @@ class GameServer(Node):
         Rover_names: Updated from rover subscriptions, subscribing and participating in the game.
         """
         self.num_rovers = 0
-        self.total_rovers = 4
+        self.total_rovers = 3 # TODO make this a parma
         self.rovers_list = []
         self.rovers_info = {}
         self.rovers_state = {}
@@ -189,7 +189,7 @@ class GameServer(Node):
         # Set position
         marker.pose.position.x = pose[0]
         marker.pose.position.y = pose[1]
-        marker.pose.position.z = pose[2] if len(pose) > 2 else 0.0
+        marker.pose.position.z = 0.5 #pose[2] if len(pose) > 2 else 0.0
         
         # No orientation for a simple sphere
         marker.pose.orientation.x = 0.0
@@ -204,9 +204,11 @@ class GameServer(Node):
         
         # Color (just pick a color, e.g., red)
         
-        marker.color.r = 1.0
+        rover_team = self.rovers_info[rover_name]["team"]
+
+        marker.color.r = 1.0 if rover_team == "RED" else 0.0
         marker.color.g = 0.0
-        marker.color.b = 0.0
+        marker.color.b = 1.0 if rover_team == "BLUE" else 0.0
         marker.color.a = 1.0  # alpha
         
         # Lifetime 0 = forever
@@ -242,7 +244,7 @@ class GameServer(Node):
             # set position
             goal_msg.pos.x = p_vicon_pos[0]
             goal_msg.pos.y = p_vicon_pos[1]
-            goal_msg.pos.z = p_vicon_pos[2]
+            goal_msg.pos.z = 0.5 #p_vicon_pos[2]
 
             eps_vel = 0.001
             # set velocity
