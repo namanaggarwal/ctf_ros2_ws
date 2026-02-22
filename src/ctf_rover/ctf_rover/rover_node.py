@@ -20,6 +20,8 @@ class RoverNode(Node):
         self.grid_size = 10
         self.ctf_player_config = kwargs.get('ctf_player_config', '2v2')
 
+        self.goal_height = -0.01
+
         # Pending: declare_parameters for rover_name and rover_team_name.
         # self.rover_name = 'RR03' # Read from a config file / YAML file.
         vehtype = os.getenv("VEHTYPE")
@@ -195,7 +197,7 @@ class RoverNode(Node):
             # set local position
             local_goal.pos.x = local_point[0]
             local_goal.pos.y = local_point[1]
-            local_goal.pos.z = local_point[2]
+            local_goal.pos.z = self.goal_height #local_point[2]
 
             # set local velocity
             local_goal.vel.x = local_vel[0]
