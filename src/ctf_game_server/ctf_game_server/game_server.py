@@ -51,6 +51,8 @@ class GameServer(Node):
         self.red_init_spawn_y_lim = 2 # Measured from top of the grid.
         self.possible_init_headings_red_team = [0, 7, 6, 5] # possible init headings = (0, -45, -90, -135)
 
+        self.goal_height = -0.01
+
         # Subscriptions for each rover pose from VICON
         # (You can generate these dynamically)
         """
@@ -244,7 +246,7 @@ class GameServer(Node):
             # set position
             goal_msg.pos.x = p_vicon_pos[0]
             goal_msg.pos.y = p_vicon_pos[1]
-            goal_msg.pos.z = 0.5 #p_vicon_pos[2]
+            goal_msg.pos.z = self.goal_height #0.5 #p_vicon_pos[2]
 
             eps_vel = 0.001
             # set velocity
