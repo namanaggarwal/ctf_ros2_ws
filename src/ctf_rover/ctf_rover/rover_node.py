@@ -13,6 +13,7 @@ from tf2_ros import TransformBroadcaster
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 import os
 import numpy as np
+from ctf_msgs.srv import JoinGame
 
 class RoverNode(Node):
     def __init__(self, **kwargs):
@@ -35,17 +36,13 @@ class RoverNode(Node):
         self.get_logger().info(f"TEAM = {self.rover_team_name}")
         # self.rover_team_name = 'RED' # Read from a config file / YAML file.
 
-        self.join_game_topic = "/ctf/join"
-        self.publisher_join_game_topic = self.create_publisher(
-                JoinGameMessage,
-                self.join_game_topic,
-                10
-            )
-        
-        msg = JoinGameMessage()
-        msg.rover_name = self.rover_name
-        msg.rover_team_name = self.rover_team_name
-        self.publisher_join_game_topic.publish(msg)
+        # use join game service to join the game
+        self.join_client = self.create_client(JoinGame, "/ctf/join_game")
+
+        while not self.join_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info("Waiting for join service...")
+
+        self.send_join_request()
 
         self.get_logger().info("Rover node for ROVER {} started, waiting for rover to join...".format(self.rover_name))
 
@@ -96,6 +93,30 @@ class RoverNode(Node):
         ### Idea: Receeding horizon prediction for fast planning and then replanning every now and then depending on the game being played: with slow adversaries, can be faster. With fast adversaries, need to be strategic.
         ### VICON Callback: either waypoint reach within goal tolerance or if collision avoidance activated with an adversary agent, respawn.        
     
+    # setup join game request with rover name and team
+    def send_join_request(self):
+
+        request = JoinGame.Request()
+        request.rover_name = self.rover_name
+        request.rover_team_name = self.rover_team_name
+
+        future = self.join_client.call_async(request)
+        future.add_done_callback(self.join_response_callback)
+    
+    # join game response
+    def join_response_callback(self, future):
+
+        try:
+            response = future.result()
+        except Exception as e:
+            self.get_logger().error(f"Service call failed: {e}")
+            return
+
+        if response.accepted:
+            self.get_logger().info("Successfully joined game.")
+        else:
+            self.get_logger().warn(f"Join rejected: {response.message}")
+            
     # initialize tf from world to map
     def initialize_tf(self):
 

@@ -18,6 +18,8 @@ import numpy as np
 # import torch
 from gymnasium.utils import seeding
 
+from ctf_msgs.srv import JoinGame
+
 # import tf.transformations as tft
 
 def make_seeded_rngs(seed: int):
@@ -80,13 +82,9 @@ class GameServer(Node):
         self.rr_to_ctf_agent_map = {}
         self.state = {}
 
-        self.join_game_topic = "/ctf/join"
-        self.subscriber_join_game_topic = self.create_subscription(
-                JoinGameMessage,
-                self.join_game_topic,
-                self.join_game_callback,
-                10,
-            )
+        # initilaize join game service for rovers
+        self.join_service = self.create_service(JoinGame, "/ctf/join_game", self.handle_join_request)
+
         """Pending: rover_name hardware to rover_name in sim mapping: for eg. rro3:red_01, rr06:blue_02"""
         self.get_logger().info("GameServer started, waiting for rovers to join...")
         
@@ -113,25 +111,37 @@ class GameServer(Node):
         ) 
         """
 
-    def join_game_callback(self, msg: JoinGameMessage):
-        if self.num_rovers == self.total_rovers:
-            return
-        
-        rover_name = msg.rover_name
-        rover_team_name = msg.rover_team_name
+    # handle rover joins
+    def handle_join_request(self, request, response):
+
+        # get rover name and team
+        rover_name = request.rover_name
+        rover_team_name = request.rover_team_name
         assert rover_team_name.startswith('R') or rover_team_name.startswith('B')
 
+        # return if rover already joined
+        if rover_name in self.rovers_list:
+            response.accepted = False
+            response.message = f"ROVER {rover_name} already joined."
+            return response
+
+        # return if game full
+        if self.num_rovers >= self.total_rovers:
+            response.accepted = False
+            response.message = "Game full."
+            return response
+        
+        # init rover pose topics
         rover_pose_topic = "/{}/world".format(rover_name)
         server_to_rover_topic = "/{}/server_to_rover".format(rover_name)
-        if rover_name in self.rovers_list:
-            self.get_logger().warn(f"[GAMESERVER]: ROVER {rover_name} already joined.")
-            return
-        
+
+        # set teams
         self.rr_to_ctf_agent_map[rover_name] = self.ctf_red_agents[self.num_agents_red_team] if rover_team_name.startswith('R') else self.ctf_blue_agents[self.num_agents_blue_team]
         self.num_rovers += 1
         if rover_team_name.startswith('R'): self.num_agents_red_team += 1
         elif rover_team_name.startswith('B'): self.num_agents_blue_team += 1
 
+        # add rover info to the game
         self.rovers_list.append(rover_name)
         self.rovers_info[rover_name] = {
             'team': rover_team_name,
@@ -143,8 +153,10 @@ class GameServer(Node):
             'pose': [],
             'last_seen': []
         }
+
         self.get_logger().info("[GAMESERVER]: ROVER {} JOINED FROM TEAM {} ".format(rover_name, rover_team_name))
 
+        # create pose subscriber for rover
         rover_pose_sub = self.create_subscription(
                 PoseStamped,
                 rover_pose_topic,
@@ -153,6 +165,7 @@ class GameServer(Node):
             )
         self.rover_pose_subscriptions[rover_name] = rover_pose_sub
 
+        # create publisher for rover
         server_to_rover_pub = self.create_publisher(ServerToRoverMessage, server_to_rover_topic, 10)
         self.server_to_rover_publishers[rover_name] = server_to_rover_pub
 
@@ -161,11 +174,16 @@ class GameServer(Node):
             self.pre_start_game_utils()
             self.start_game_callback()
 
+        # start the game if enough rovers
         if self.num_rovers == self.total_rovers:
             self.pre_start_game_utils()
             self.start_game_callback()
-        return
 
+        response.accepted = True
+        response.message = f"{rover_name} join successful."
+
+        return response
+    
     def pre_start_game_utils(self):
         inv_map = {}
         for rr_name, ctf_agent in self.rr_to_ctf_agent_map.items():

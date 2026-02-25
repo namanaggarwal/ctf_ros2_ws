@@ -12,6 +12,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GameState.msg"
   "msg/JoinGameMessage.msg"
   "msg/ServerToRoverMessage.msg"
+  "srv/JoinGame.srv"
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces dynus_interfaces
 )
 
