@@ -45,15 +45,33 @@ def make_seeded_rngs(seed: int):
 class GameServer(Node):
     def __init__(self, **kwargs):
         super().__init__("ctf")
-        self.grid_size = 8
-        self.ctf_player_config = kwargs.get('ctf_player_config', '2v2')
+        # self.grid_size = 8
+        # self.ctf_player_config = kwargs.get('ctf_player_config', '2v2')
         self.ctf_env = None # !? --> move CTF custom environment to within the same directory and import CustomCTF_v1.
         self.blue_init_spawn_y_lim = 2 # Measured from bottom of the grid.
         self.possible_init_headings_blue_team = [0, 1, 2, 3] # possible init headings = (0, 45, 90, 135)
         self.red_init_spawn_y_lim = 2 # Measured from top of the grid.
         self.possible_init_headings_red_team = [0, 7, 6, 5] # possible init headings = (0, -45, -90, -135)
 
-        self.goal_height = -0.01
+        # self.goal_height = -0.01
+
+        ### *** ### get params
+        self.declare_parameter("grid_size", 8)
+        self.declare_parameter("goal_height", -0.01)
+        self.declare_parameter("total_rovers", 3)
+        self.declare_parameter("seed", 0)
+        self.declare_parameter("ctf_player_config", "2v2")
+
+        self.goal_height = self.get_parameter("goal_height").value
+        self.grid_size = self.get_parameter("grid_size").value
+        self.total_rovers = self.get_parameter("total_rovers").value
+        self._seed = self.get_parameter("seed").value
+        self.ctf_player_config = self.get_parameter("ctf_player_config").value
+
+        self.get_logger().info(f"TOTAL ROVERS {self.total_rovers}")
+
+
+        ### *** ###
 
         # Subscriptions for each rover pose from VICON
         # (You can generate these dynamically)
@@ -61,7 +79,7 @@ class GameServer(Node):
         Rover_names: Updated from rover subscriptions, subscribing and participating in the game.
         """
         self.num_rovers = 0
-        self.total_rovers = 3 # TODO make this a parma
+        # self.total_rovers = 3 # TODO make this a parma
         self.rovers_list = []
         self.rovers_info = {}
         self.rovers_state = {}
@@ -73,7 +91,7 @@ class GameServer(Node):
         self.num_agents_blue_team = 0
         self.num_agents_red_team = 0
         
-        self._seed = kwargs.get('seed', 0)
+        # self._seed = kwargs.get('seed', 0)
         self.seed(seed=self._seed)
 
         self.ctf_red_agents = ['Red_0', 'Red_1']
