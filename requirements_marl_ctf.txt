@@ -29,7 +29,7 @@ idna==3.11
 ImageIO==2.37.2
 importlib_metadata==8.7.0
 ipykernel==6.29.5
-ipython==9.3.0
+#ipython==9.3.0
 ipython_pygments_lexers==1.1.1
 jedi==0.19.2
 Jinja2==3.1.6
@@ -57,7 +57,8 @@ nbstripout==0.8.1
 nest_asyncio==1.6.0
 networkx==3.4.2
 numexpr==2.10.1
-numpy==2.2.4
+#numpy==2.2.4
+numpy<1.27.0
 nvidia-cublas-cu12==12.6.4.1
 nvidia-cuda-cupti-cu12==12.6.80
 nvidia-cuda-nvrtc-cu12==12.6.77
@@ -92,6 +93,7 @@ Pygments==2.19.1
 pyparsing==3.2.3
 python-dateutil==2.9.0.post0
 pytz==2024.1
+PyYAML==6.0.3
 pyzmq==26.2.0
 referencing==0.36.2
 requests==2.32.5
@@ -113,6 +115,7 @@ tornado==6.5
 tqdm==4.67.1
 traitlets==5.14.3
 triton==3.3.0
+typeguard==4.5.1
 typing_extensions==4.13.2
 tzdata==2025.2
 urllib3==2.5.0
