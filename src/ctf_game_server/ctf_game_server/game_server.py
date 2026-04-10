@@ -8,7 +8,9 @@ from ctf_msgs.msg import JoinGameMessage, ServerToRoverMessage
 from geometry_msgs.msg import TransformStamped
 from scipy.spatial.transform import Rotation as R_scipy
 import tf2_ros
+from tf2_ros import TransformException
 from visualization_msgs.msg import Marker
+from nav_msgs.msg import Odometry
 
 import copy
 import functools
@@ -54,24 +56,22 @@ class GameServer(Node):
         self.possible_init_headings_red_team = [0, 7, 6, 5] # possible init headings = (0, -45, -90, -135)
 
         # self.goal_height = -0.01
-
-        ### *** ### get params
+        
         self.declare_parameter("grid_size", 8)
         self.declare_parameter("goal_height", -0.01)
         self.declare_parameter("total_rovers", 3)
         self.declare_parameter("seed", 0)
         self.declare_parameter("ctf_player_config", "2v2")
+        self.declare_parameter("use_dlio", False)
 
         self.goal_height = self.get_parameter("goal_height").value
         self.grid_size = self.get_parameter("grid_size").value
         self.total_rovers = self.get_parameter("total_rovers").value
         self._seed = self.get_parameter("seed").value
         self.ctf_player_config = self.get_parameter("ctf_player_config").value
+        self.use_dlio = self.get_parameter("use_dlio").value
 
         self.get_logger().info(f"TOTAL ROVERS {self.total_rovers}")
-
-
-        ### *** ###
 
         # Subscriptions for each rover pose from VICON
         # (You can generate these dynamically)
@@ -99,6 +99,9 @@ class GameServer(Node):
         self.agents = copy.deepcopy(self.ctf_blue_agents) + copy.deepcopy(self.ctf_red_agents)
         self.rr_to_ctf_agent_map = {}
         self.state = {}
+
+        self.global_frame = "world"
+        self.tf_buffer = tf2_ros.Buffer()
 
         # initilaize join game service for rovers
         self.join_service = self.create_service(JoinGame, "/ctf/join_game", self.handle_join_request)
@@ -128,6 +131,60 @@ class GameServer(Node):
             self.handle_get_state
         ) 
         """
+    
+    # initialize tf from world to map for a given rover
+    def initialize_tf(self, rover_name):
+
+        # try to get the transform
+        try:
+
+            # get transform from world to init pose
+            # X_world_RR
+            tf = self.tf_buffer.lookup_transform(
+                self.global_frame,             
+                rover_name,              
+                rclpy.time.Time()
+            )
+        except TransformException:
+            self.get_logger().info("Waiting for initial TF")
+            return 
+
+        self.get_logger().info("Successfully got TF!")
+
+        # Convert TF to 4x4 matrix
+        t = tf.transform.translation
+        q = tf.transform.rotation
+        r = R_scipy.from_quat([q.x, q.y, q.z, q.w])
+
+        X_world_rr = np.eye(4)
+        X_world_rr[:3, :3] = r.as_matrix()
+        X_world_rr[:3, 3] = np.array([t.x, t.y, t.z])
+
+        # # publish transform for map --> init pose (world --> RR0X/map)
+        # T_world_map = TransformStamped()
+
+        # T_world_map.header.stamp = self.get_clock().now().to_msg()
+        # T_world_map.header.frame_id = 'world'
+        # T_world_map.child_frame_id = f"{rover_name}/map"
+
+        # T_world_map.transform.translation.x = t.x
+        # T_world_map.transform.translation.y = t.y
+        # T_world_map.transform.translation.z = t.z # 0.0?
+
+        # T_world_map.transform.rotation.x = q.x
+        # T_world_map.transform.rotation.y = q.y
+        # T_world_map.transform.rotation.z = q.z
+        # T_world_map.transform.rotation.w = q.w
+
+        # self.world_map_broadcaster.sendTransform(T_world_map)
+        # TODO since ^ is published in rover node, can i just grab it?
+
+        # X world wrt map = inverse(X RR wrt world)
+        # X_map_world = np.linalg.inv(X_world_rr)
+
+        # p map wrt world
+        X_world_map = X_world_rr
+        return X_world_map
 
     # handle rover joins
     def handle_join_request(self, request, response):
@@ -149,8 +206,12 @@ class GameServer(Node):
             response.message = "Game full."
             return response
         
-        # init rover pose topics
-        rover_pose_topic = "/{}/world".format(rover_name)
+        # init rover pose topic
+        if self.use_dlio:
+            rover_pose_topic = "/{}/dlio/odom_node/odom".format(rover_name)
+        else:
+            rover_pose_topic = "/{}/world".format(rover_name)
+
         server_to_rover_topic = "/{}/server_to_rover".format(rover_name)
 
         # set teams
@@ -159,14 +220,20 @@ class GameServer(Node):
         if rover_team_name.startswith('R'): self.num_agents_red_team += 1
         elif rover_team_name.startswith('B'): self.num_agents_blue_team += 1
 
+        # get transform world to map
+        if self.use_dlio:
+            X_world_map = self.initialize_tf(rover_name)
+
         # add rover info to the game
         self.rovers_list.append(rover_name)
         self.rovers_info[rover_name] = {
             'team': rover_team_name,
             'pose_topic': rover_pose_topic,
             'server_to_rover_topic': server_to_rover_topic,
-            'ctf_agent_name': self.rr_to_ctf_agent_map[rover_name]
+            'ctf_agent_name': self.rr_to_ctf_agent_map[rover_name],
         }
+        if self.use_dlio:
+            self.rovers_info[rover_name]['X_world_map'] = X_world_map
         self.rovers_state[rover_name] = {
             'pose': [],
             'last_seen': []
@@ -175,13 +242,22 @@ class GameServer(Node):
         self.get_logger().info("[GAMESERVER]: ROVER {} JOINED FROM TEAM {} ".format(rover_name, rover_team_name))
 
         # create pose subscriber for rover
-        rover_pose_sub = self.create_subscription(
+        if self.use_dlio:
+            rover_pose_sub = self.create_subscription(
+                    Odometry,
+                    rover_pose_topic,
+                    lambda msg, name=rover_name: self.dlio_callback(msg, name),
+                    10,
+                )
+            self.rover_pose_subscriptions[rover_name] = rover_pose_sub
+        else:
+            rover_pose_sub = self.create_subscription(
                 PoseStamped,
                 rover_pose_topic,
                 lambda msg, name=rover_name: self.vicon_callback(msg, name),
                 10,
             )
-        self.rover_pose_subscriptions[rover_name] = rover_pose_sub
+            self.rover_pose_subscriptions[rover_name] = rover_pose_sub
 
         # create publisher for rover
         server_to_rover_pub = self.create_publisher(ServerToRoverMessage, server_to_rover_topic, 10)
@@ -532,6 +608,48 @@ class GameServer(Node):
         self.get_logger().debug(f"[GAMESERVER] Updated pose for {name} at sec={now.sec} nsec={now.nanosec}")
         self.get_logger().debug(f"[GAMESERVER] Latest pose for {name} at sec={now.sec} nsec={now.nanosec}: {pose}")
         return
+    
+    # use dlio for poses instead of vicon
+    # convert dlio pose to the vicon (global) frame and save it for each rover
+    def dlio_callback(self, msg, name):
+
+        X_world_map = self.rovers_info[name]["X_world_map"]
+
+        p = msg.pose.pose.position
+        q = msg.pose.pose.orientation
+
+        local_point = np.array([p.x, p.y, p.z, 1.0])
+        q_local = np.array([q.x, q.y, q.z, q.w])
+
+        global_point = self.X_world_map @ local_point #local pt is dlio
+
+        R_world_map = X_world_map[:3, :3]
+        q_world_map = R_scipy.from_matrix(R_world_map).as_quat()  
+
+        # get rotations
+        r_world_map = R_scipy.from_quat(q_world_map)
+        r_local = R_scipy.from_quat(q_local)
+
+        r_global = r_world_map * r_local
+        global_orient = r_global.as_quat()
+
+        rover_pose = PoseStamped()
+
+        rover_pose.pose.position.x = global_point[0]
+        rover_pose.pose.position.y = global_point[1]
+        rover_pose.pose.position.z = global_point[2]
+
+        rover_pose.pose.orientation.x = global_orient[0]
+        rover_pose.pose.orientation.y = global_orient[1]
+        rover_pose.pose.orientation.z = global_orient[2]
+        rover_pose.pose.orientation.w = global_orient[3]
+
+        # v = global_planner_msg.vel # dlio msg
+        # local_vel = np.array([v.x, v.y, v.z])
+
+        # R_world_map = self.X_world_map[:3, :3]  # rotation only
+        # global_vel = R_world_map @ local_vel
+        
     
     def seed(self, seed=None):
         self.rngs = make_seeded_rngs(seed)

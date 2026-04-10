@@ -55,11 +55,21 @@ class RoverNode(Node):
             )
         
         self.local_dynus_pub_goal_topic = '/{}/term_goal'.format(self.rover_name) #'/{}/term_goal'.format(self.rover_name)
-        self.publisher_local_dynus_command_goal = self.create_publisher(
-                State,
-                self.local_dynus_pub_goal_topic,
-                10
-            )
+        
+        self.USE_VEL = False
+
+        if self.USE_VEL:
+            self.publisher_local_dynus_command_goal = self.create_publisher(
+                    State,
+                    self.local_dynus_pub_goal_topic,
+                    10
+                )
+        else:
+            self.publisher_local_dynus_command_goal = self.create_publisher(
+                    PoseStamped,
+                    self.local_dynus_pub_goal_topic,
+                    10
+                )
 
         # create tf buffer for global goal
         self.tf_buffer = tf2_ros.Buffer()
@@ -211,25 +221,42 @@ class RoverNode(Node):
             local_vel = R_map_world @ global_vel
 
             # create local goal
-            local_goal = State()
-            local_goal.header.stamp = global_planner_msg.header.stamp
-            local_goal.header.frame_id = self.local_frame
+            if self.USE_VEL:
+                local_goal = State()
+                local_goal.header.stamp = global_planner_msg.header.stamp
+                local_goal.header.frame_id = self.local_frame
 
-            # set local position
-            local_goal.pos.x = local_point[0]
-            local_goal.pos.y = local_point[1]
-            local_goal.pos.z = self.goal_height #local_point[2]
+                # set local position
+                local_goal.pos.x = local_point[0]
+                local_goal.pos.y = local_point[1]
+                local_goal.pos.z = self.goal_height #local_point[2]
 
-            # set local velocity
-            local_goal.vel.x = local_vel[0]
-            local_goal.vel.y = local_vel[1]
-            local_goal.vel.z = local_vel[2]
+                # set local velocity
+                local_goal.vel.x = local_vel[0]
+                local_goal.vel.y = local_vel[1]
+                local_goal.vel.z = local_vel[2]
 
-            # ignore yaw (already set with velocity vector)
-            local_goal.quat.x = 0.0
-            local_goal.quat.y = 0.0
-            local_goal.quat.z = 0.0
-            local_goal.quat.w = 1.0
+                # ignore yaw (already set with velocity vector)
+                local_goal.quat.x = 0.0
+                local_goal.quat.y = 0.0
+                local_goal.quat.z = 0.0
+                local_goal.quat.w = 1.0
+            else:
+                local_goal = PoseStamped()
+                local_goal.header.stamp = global_planner_msg.header.stamp
+                local_goal.header.frame_id = self.local_frame
+
+                # set local position
+                local_goal.pose.position.x = local_point[0]
+                local_goal.pose.position.y = local_point[1]
+                local_goal.pose.position.z = self.goal_height #local_point[2]
+
+                # ignore yaw (already set with velocity vector)
+                local_goal.pose.orientation.x = 0.0
+                local_goal.pose.orientation.y = 0.0
+                local_goal.pose.orientation.z = 0.0
+                local_goal.pose.orientation.w = 1.0
+
 
             self.get_logger().info(f"[ROVER] Publishing local goal [{local_point[0]}, {local_point[1]}, {local_point[2]}]")
 
