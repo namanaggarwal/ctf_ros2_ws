@@ -2,6 +2,7 @@ game_server:
   ros__parameters:
     grid_size: 8
     goal_height: -0.01
-    total_rovers: 1
+    total_rovers: 2
     seed: 0
     ctf_player_config: "2v2"
+    use_dlio: False
