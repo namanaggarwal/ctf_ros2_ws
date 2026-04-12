@@ -2,7 +2,8 @@ rover_node:
   ros__parameters:
     team: "BLUE"
     team_index: 1
-    policy_zip_path: "/home/namanagg/marl_ctf/blue_v4_hybrid_mappo_new_map/blue_mappo_final.zip"
+    # Path after `colcon build`: $(ros2 pkg prefix ctf_rover)/share/ctf_rover/policies/blue_mappo_final.zip
+    policy_zip_path: "/home/swarm/code/ctf_ros2_ws/install/ctf_rover/share/ctf_rover/policies/blue_mappo_final.zip"
     all_rover_names:
       - "RR01"
       - "RR02"

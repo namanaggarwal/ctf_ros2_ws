@@ -16,6 +16,10 @@ setup(
             'config/params_red_0.yaml',
             'config/params_red_1.yaml',
         ]),
+        ('share/' + package_name + '/policies', [
+            'policies/blue_mappo_final.zip',
+            'policies/iter3_red_br.zip',
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

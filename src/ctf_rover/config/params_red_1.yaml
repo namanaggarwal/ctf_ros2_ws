@@ -2,7 +2,8 @@ rover_node:
   ros__parameters:
     team: "RED"
     team_index: 1
-    policy_zip_path: "/home/namanagg/marl_ctf/robust_psro_iter1/iter3_red_br.zip"
+    # Path after `colcon build`: $(ros2 pkg prefix ctf_rover)/share/ctf_rover/policies/iter3_red_br.zip
+    policy_zip_path: "/home/swarm/code/ctf_ros2_ws/install/ctf_rover/share/ctf_rover/policies/iter3_red_br.zip"
     all_rover_names:
       - "RR01"
       - "RR02"

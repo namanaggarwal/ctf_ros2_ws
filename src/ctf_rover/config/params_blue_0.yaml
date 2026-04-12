@@ -2,7 +2,8 @@ rover_node:
   ros__parameters:
     team: "BLUE"
     team_index: 0
-    policy_zip_path: "/home/namanagg/marl_ctf/blue_v4_hybrid_mappo_new_map/blue_mappo_final.zip"
+    # Path after `colcon build`: $(ros2 pkg prefix ctf_rover)/share/ctf_rover/policies/blue_mappo_final.zip
+    policy_zip_path: "/home/swarm/code/ctf_ros2_ws/install/ctf_rover/share/ctf_rover/policies/blue_mappo_final.zip"
     # Names of ALL rovers in the game (must match VEHTYPE+VEHNUM on each machine).
     # Order must align with all_rover_teams and all_rover_team_indices below.
     all_rover_names:
