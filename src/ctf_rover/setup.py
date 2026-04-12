@@ -10,6 +10,12 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/config', [
+            'config/params_blue_0.yaml',
+            'config/params_blue_1.yaml',
+            'config/params_red_0.yaml',
+            'config/params_red_1.yaml',
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

@@ -1,0 +1,21 @@
+rover_node:
+  ros__parameters:
+    team: "RED"
+    team_index: 1
+    policy_zip_path: "/home/namanagg/marl_ctf/robust_psro_iter1/iter3_red_br.zip"
+    all_rover_names:
+      - "RR01"
+      - "RR02"
+      - "RR03"
+      - "RR04"
+    all_rover_teams:
+      - "BLUE"
+      - "BLUE"
+      - "RED"
+      - "RED"
+    all_rover_team_indices:
+      - 0
+      - 1
+      - 0
+      - 1
+    arrival_tolerance: 0.5

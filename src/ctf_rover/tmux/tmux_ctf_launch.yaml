@@ -43,7 +43,13 @@ windows:
       - source /opt/ros/humble/setup.bash
       - source /home/swarm/.bashrc
     panes:
-      # Onboard mighty
+      # CTF rover node — set PARAMS_FILE to the correct role yaml before launching.
+      # Examples (adjust rover names to match VEHTYPE+VEHNUM on each machine):
+      #   Blue_0: params_blue_0.yaml
+      #   Blue_1: params_blue_1.yaml
+      #   Red_0:  params_red_0.yaml
+      #   Red_1:  params_red_1.yaml
       - shell_command:
         - source /home/swarm/code/ctf_ros2_ws/install/setup.bash
-        - sleep 5; ros2 run ctf_rover rover_node --ros-args -p team:="BLUE"
+        - export PARAMS_FILE=$(ros2 pkg prefix ctf_rover)/share/ctf_rover/config/params_blue_0.yaml
+        - sleep 5; ros2 run ctf_rover rover_node --ros-args --params-file $PARAMS_FILE
