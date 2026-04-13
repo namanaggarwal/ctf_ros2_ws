@@ -155,3 +155,8 @@ Standalone version of the coordinate transform logic in `RoverNode`. Subscribes 
 - `vicon_callback` appears in `rover_node.py` but `RoverNode` doesn't subscribe to any pose topic — copy-paste remnant from the game server.
 - `USE_VEL = False` is hardcoded in `RoverNode`; the `State`-based publisher path is unreachable.
 - `seed()` and `_heading_to_direction_vector()` in `RoverNode` are not used — copied from game server.
+
+## Changelog
+
+### 2026-04-13
+- **Bug fix (`rover_node.py`)**: Fixed `RuntimeError: mat1 and mat2 shapes cannot be multiplied (89×26 and 32×64)` on first GNN inference. Policy checkpoints (`blue_mappo_final.zip`, `iter3_red_br.zip`) were trained with `obs_version=3` (F=16 node features, MPNN message dim = 2×16 = 32). `_init_policy()` was creating `GraphCTF` with `obs_version=2` (F=13, message dim = 26). Fixed by changing `obs_version=2` → `obs_version=3` and `get_observation_v2` → `get_observation_v3` (×2) in `rover_node.py`.

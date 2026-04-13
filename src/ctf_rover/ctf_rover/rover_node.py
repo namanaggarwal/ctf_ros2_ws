@@ -246,7 +246,7 @@ class RoverNode(Node):
         self.env = GraphCTF(
             ctf_player_config=self.ctf_player_config,
             fixed_flag_hypothesis=1,
-            obs_version=2,
+            obs_version=3,
         )
         self.env.reset()
         self.get_logger().info(
@@ -373,8 +373,8 @@ class RoverNode(Node):
         team_cap = "Blue" if self.rover_team_name.upper() == "BLUE" else "Red"
         teammate_ctf = f"{team_cap}_{1 - self.team_index}"
 
-        obs_self = self.env.get_observation_v2(self.ctf_agent_name)
-        obs_teammate = self.env.get_observation_v2(teammate_ctf)
+        obs_self = self.env.get_observation_v3(self.ctf_agent_name)
+        obs_teammate = self.env.get_observation_v3(teammate_ctf)
 
         # MAPPO: batch_action expects [agent_0_obs, agent_1_obs] in team order.
         # team_index=0 → self is agent 0, teammate is agent 1.

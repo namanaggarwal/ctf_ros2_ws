@@ -260,7 +260,7 @@ else:
 
 ---
 
-## Changelog (implemented 2026-04-12)
+## Changelog (implemented 2026-04-12; updated 2026-04-13)
 
 ### New files
 | File | Description |
@@ -278,6 +278,12 @@ else:
 | `src/ctf_rover/ctf_rover/rover_node.py` | Full rewrite — GNN policy integration (see Implementation Plan above) |
 | `src/ctf_rover/setup.py` | Added config/ data_files so YAML params are installed with the package |
 | `src/ctf_rover/tmux/tmux_ctf_launch.yaml` | Updated CTF pane command to use `--params-file` |
+
+### Bug fixes (2026-04-13)
+
+| File | Bug | Fix |
+|---|---|---|
+| `src/ctf_rover/ctf_rover/rover_node.py` | `RuntimeError: mat1 and mat2 shapes cannot be multiplied (89x26 and 32x64)` — policy's `mpnn1` linear layer expects input dim 32 (`2×16`) but received 26 (`2×13`). Root cause: `_init_policy()` instantiated `GraphCTF` with `obs_version=2` (F=13), while the loaded checkpoint (`blue_mappo_final.zip`, `iter3_red_br.zip`) was trained with `obs_version=3` (F=16). | Changed `obs_version=2` → `obs_version=3` in `_init_policy()`. Changed `get_observation_v2(...)` → `get_observation_v3(...)` (×2) in `policy_step()`. |
 
 ### Attribute name corrections (vs. plan)
 - `env.state[agent]` — agent positions (not `env.agent_nodes`)
