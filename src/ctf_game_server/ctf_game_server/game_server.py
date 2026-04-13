@@ -360,7 +360,9 @@ class GameServer(Node):
                 self.get_logger().info(f"[DEBUG INIT POSE] Received init pose for {ctf_agent}: {pose}")
 
             sim_x, sim_y = pose
-            p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(sim_x, sim_y)
+            # Blue faces +y in sim (heading=2=North), Red faces -y in sim (heading=6=South)
+            sim_heading = 2 if ctf_agent.startswith('Blue') else 6
+            p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(sim_x, sim_y, sim_heading)
             q = GameServer.yaw_to_quaternion(p_vicon_heading)
 
             vel_vicon_xy = np.array([np.cos(p_vicon_heading), np.sin(p_vicon_heading)])
