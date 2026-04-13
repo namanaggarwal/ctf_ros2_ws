@@ -158,11 +158,15 @@ Standalone version of the coordinate transform logic in `RoverNode`. Subscribes 
 
 ## Changelog
 
-### 2026-04-14
+### 2026-04-13 (updated 2026-04-14)
 - **Coordinate transform update (`rover_node.py`, `game_server.py`)**: Axes redefined as `x_sim = -y_vicon, y_sim = +x_vicon` (proper 90° CW rotation, det=+1). `_R_SIM_VICON` split into `_R_SIM_TO_VICON = [[0,1],[-1,0]]` and `_R_VICON_TO_SIM = [[0,-1],[1,0]]`. `sim_frame_to_vicon_frame` heading formula corrected to `θ_vicon = θ_sim − π/2`. Blue/Red spawn headings explicitly set. Debug TF now uses valid rotation.
 - **GraphCTF spawn (`game_server.py`)**: `compute_initial_poses()` replaced with GraphCTF-based logic — calls `ctf_env.reset()`, reads `node_pose_dict` for sim [x,y] per agent. Old 8×8 grid `reset()` removed. `customCTF.py` copied into game_server package.
 - **Bug fix — stale pairwise distances (`rover_node.py`)**: `min_opp_distance` / `min_teammate_distance` (obs v3 features 12 & 13) were frozen at spawn since `env.step()` is never called. Fixed by recomputing BFS pairwise distances in `_update_env_state()` on every policy step.
 - **Bug fix — policy_step spam (`rover_node.py`)**: `_world_state_callback` at ~100 Hz was calling `policy_step()` repeatedly while rover sat at goal. Fixed with `_waiting_to_depart` flag: blocks re-triggering until rover leaves goal area (`dist > arrival_tolerance`). Stay action holds position indefinitely by design.
+
+### 2026-04-13
+- **Game-start synchronisation (`rover_node.py`)**: Replaced fixed 2s post-INIT timer with arrival-triggered 5s countdown. After receiving INIT, the rover navigates to its spawn node; once `_world_state_callback` detects arrival (`dist < arrival_tolerance`) the first time (`_game_started = False`), a 5s one-shot timer starts. When it fires, `_game_started` is set to `True` and the first `policy_step()` runs. Subsequent goal arrivals trigger `policy_step()` immediately. Added `_game_started` flag to `RoverNode`.
+- **Dead code removal (`game_server.py`)**: Removed `make_seeded_rngs()`, `reset()`, `_sample_init_heading()`, `_heading_to_direction_vector()`, `discrete_grid_abstraction_to_highbay_coordinates()`, `seed()` methods, associated unused imports (`random`, `functools`, `gymnasium.utils.seeding`), and the no-op `for rover in self.rovers_list` loop from `__init__`.
 
 ### 2026-04-13
 - **Bug fix (`rover_node.py`)**: Fixed `RuntimeError: mat1 and mat2 shapes cannot be multiplied (89×26 and 32×64)` on first GNN inference. Policy checkpoints (`blue_mappo_final.zip`, `iter3_red_br.zip`) were trained with `obs_version=3` (F=16 node features, MPNN message dim = 2×16 = 32). `_init_policy()` was creating `GraphCTF` with `obs_version=2` (F=13, message dim = 26). Fixed by changing `obs_version=2` → `obs_version=3` and `get_observation_v2` → `get_observation_v3` (×2) in `rover_node.py`.

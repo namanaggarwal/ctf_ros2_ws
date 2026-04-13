@@ -97,6 +97,8 @@ class RoverNode(Node):
         # Prevents re-triggering policy_step until the rover physically departs the goal area.
         # Set True after every policy_step(); cleared once dist to goal > arrival_tolerance.
         self._waiting_to_depart = False
+        # False until the rover arrives at its spawn node and the 5s countdown completes.
+        self._game_started = False
 
         self.get_logger().info("RoverNode initialised, waiting for INIT from server.")
 
@@ -229,10 +231,8 @@ class RoverNode(Node):
                 f"[ROVER] Spawn node idx={self.current_node_idx}"
             )
 
-            # Fire first policy step after a short delay to let world state arrive
-            if self._first_step_timer is not None:
-                self._first_step_timer.cancel()
-            self._first_step_timer = self.create_timer(2.0, self._first_policy_step_once)
+            # Policy step fires once the rover physically arrives at its spawn node
+            # (detected in _world_state_callback) and a 5s countdown completes.
 
     # ------------------------------------------------------------------
     # Policy initialisation (called once on first INIT)
@@ -317,11 +317,19 @@ class RoverNode(Node):
             return
 
         if dist < self.arrival_tolerance:
-            self.get_logger().info(
-                f"[POLICY] Goal reached (dist={dist:.3f}m). Stepping policy."
-            )
-            self._waiting_to_depart = True
-            self.policy_step()
+            if not self._game_started:
+                # First arrival at spawn — start 5s countdown before beginning GNN inference.
+                if self._first_step_timer is None:
+                    self.get_logger().info(
+                        f"[POLICY] Spawn reached (dist={dist:.3f}m). Game starts in 5s."
+                    )
+                    self._first_step_timer = self.create_timer(5.0, self._first_policy_step_once)
+            else:
+                self.get_logger().info(
+                    f"[POLICY] Goal reached (dist={dist:.3f}m). Stepping policy."
+                )
+                self._waiting_to_depart = True
+                self.policy_step()
 
     # ------------------------------------------------------------------
     # Env state sync
@@ -390,10 +398,13 @@ class RoverNode(Node):
     # ------------------------------------------------------------------
 
     def _first_policy_step_once(self):
-        self._waiting_to_depart = False
-        self.policy_step()
+        self._game_started = True
         self._first_step_timer.cancel()
         self._first_step_timer = None
+        self._waiting_to_depart = False
+        self.get_logger().info("[POLICY] 5s elapsed — game starting, running first policy step.")
+        self.policy_step()
+        self._waiting_to_depart = True  # rover must physically depart before next policy_step
 
     def policy_step(self):
         if not self.policy_ready:

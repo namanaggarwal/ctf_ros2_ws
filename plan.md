@@ -296,6 +296,13 @@ else:
 | `src/ctf_rover/ctf_rover/rover_node.py` | **Bug fix — stale pairwise distances**: `min_opp_distance` and `min_teammate_distance` (obs v3 features 12 & 13) were set at `env.reset()` and never updated since `env.step()` is never called. Fixed by recomputing pairwise BFS distances in `_update_env_state()` after every state write. |
 | `src/ctf_rover/ctf_rover/rover_node.py` | **Bug fix — policy_step spam**: `_world_state_callback` fires at ~100 Hz; if the rover sat within `arrival_tolerance` of the goal it would call `policy_step()` on every pose message. Fixed with `_waiting_to_depart` flag: after each `policy_step()`, the flag blocks re-triggering until the rover physically leaves the goal area (`dist > arrival_tolerance`). Stay action correctly holds position indefinitely (rover never departs). |
 
+### Changes (2026-04-13)
+
+| File | Change |
+|---|---|
+| `src/ctf_rover/ctf_rover/rover_node.py` | **Game-start synchronisation**: replaced fixed 2s post-INIT timer with arrival-triggered 5s countdown. Rover navigates to spawn; `_world_state_callback` detects first arrival (`_game_started = False`, `dist < arrival_tolerance`) and starts a 5s one-shot timer. On expiry, `_game_started = True` and first `policy_step()` fires. Added `_game_started` flag. |
+| `src/ctf_game_server/ctf_game_server/game_server.py` | **Dead code removal**: removed `make_seeded_rngs()`, `reset()`, `_sample_init_heading()`, `_heading_to_direction_vector()`, `discrete_grid_abstraction_to_highbay_coordinates()`, `seed()`; removed unused imports (`random`, `functools`, `gymnasium.utils.seeding`); removed no-op `for rover in self.rovers_list` loop from `__init__`. |
+
 ### Attribute name corrections (vs. plan)
 - `env.state[agent]` — agent positions (not `env.agent_nodes`)
 - `env.enemy_flag_known[agent]` — per-agent dict (not a single team flag)
@@ -368,21 +375,30 @@ tmuxinator start -p src/ctf_rover/tmux/tmux_ctf_launch.yaml
 2. Each rover starts, calls `/ctf/join_game` with its name and team; the server assigns
    a CTF agent name (`Blue_0`, `Blue_1`, `Red_0`, `Red_1`) based on join order within
    each team.
-3. Server assigns spawn positions, sends `INIT` to each rover. The `INIT` message
-   includes the full roster (`roster_rover_names` / `roster_ctf_agent_names`).
+3. Server assigns spawn positions via `GraphCTF.reset()`, sends `INIT` to each rover.
+   The `INIT` message includes the full roster (`roster_rover_names` / `roster_ctf_agent_names`).
 4. Each rover on receiving `INIT`:
    - Builds `rr_to_ctf` and derives its own `ctf_agent_name` and `team_index` from
      the roster.
    - Subscribes to `/{name}/world` for all roster members.
-   - Publishes spawn goal to DYNUS (existing behaviour).
+   - Publishes spawn goal to DYNUS.
    - Initialises its local `GraphCTF` env and loads its team GNN policy (~5–10 s).
-   - After 2 s delay, fires first `policy_step()`.
-5. On each `/{rover_name}/world` pose update:
-   - If this rover is within `arrival_tolerance` (0.5 m) of its current goal node → `policy_step()` → new waypoint published to DYNUS.
+   - Sets `goal_node_idx` to the nearest graph node to the spawn Vicon pose.
+5. Rover navigates to its spawn node. On each `/{rover_name}/world` pose update,
+   `_world_state_callback` computes distance to `goal_node_idx`.
+6. **Spawn arrival** (`dist < arrival_tolerance`, `_game_started = False`):
+   - A 5s one-shot timer starts (guarded — only starts once).
+   - After 5 s, `_first_policy_step_once()` fires:
+     - Sets `_game_started = True`.
+     - Calls `policy_step()` → first GNN inference → new waypoint published to DYNUS.
+     - Sets `_waiting_to_depart = True` (rover must physically leave before next step).
+7. **In-game goal arrivals** (`dist < arrival_tolerance`, `_game_started = True`):
+   - `policy_step()` called immediately → next waypoint published.
+   - `_waiting_to_depart` blocks re-triggering until rover leaves goal area.
 
 ### Tuning
 | Parameter | Where | Notes |
 |---|---|---|
 | `arrival_tolerance` | `config/params_*.yaml` | Increase if rovers overshoot nodes; decrease for tighter tracking |
 | `total_rovers` | `ctf_game_server/config/params.yaml` | Must equal number of physical rovers |
-| First-step delay | `rover_node.py` line with `create_timer(2.0, ...)` | Increase if world-state hasn't arrived within 2 s of INIT |
+| Game-start delay | `rover_node.py` `create_timer(5.0, ...)` in `_world_state_callback` | Seconds rovers wait at spawn before GNN inference begins |
