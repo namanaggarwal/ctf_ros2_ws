@@ -17,7 +17,7 @@ from ctf_msgs.srv import JoinGame
 # Rotation matrix for sim ↔ Vicon coordinate transform.
 # Derived from: +x_vicon = -y_sim, +y_vicon = -x_sim, scale = 1 m/unit.
 # R is self-inverse: vicon_to_sim and sim_to_vicon use the same matrix.
-_R_SIM_VICON = np.array([[0.0, -1.0], [-1.0, 0.0]])
+_R_SIM_VICON = np.array([[0.0, -1.0], [1.0, 0.0]])
 _T_VICON = np.array([5.0, 5.0])  # Vicon position of sim origin [0, 0]
 
 

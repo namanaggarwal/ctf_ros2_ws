@@ -540,7 +540,7 @@ class GameServer(Node):
         #   vicon_xy = R @ sim_xy + T
         # Heading: θ_vicon = -π/2 - θ_sim  (derived from applying R to unit direction vector)
         # Note: R is a reflection (det=-1), not a valid rotation, so no debug TF is published.
-        R2 = np.array([[0., -1.], [-1., 0.]])
+        R2 = np.array([[0., 1.], [-1., 0.]])
         T2 = np.array([5.0, 5.0])
 
         sim_xy = np.array([float(sim_x), float(sim_y)])
@@ -549,6 +549,11 @@ class GameServer(Node):
 
         p_sim_yaw = (np.pi / 4.0) * sim_heading
         p_vicon_heading = -np.pi / 2.0 - p_sim_yaw
+
+        # Publish debug TF with updated transform
+        R3 = np.array([[R2[0][0], R2[0][1], 0.], [R2[1][0], R2[1][1], 0.], [0., 0., 1.]])
+        t3 = np.array([T2[0], T2[1], 0.0])
+        self.publish_sim_to_vicon_tf(t3, R3)
 
         if self.DEBUG_INIT_POSE:
             self.get_logger().info(f"[DEBUG INIT POSE]: Converted pose (vicon frame) = {p_vicon_pos}")
