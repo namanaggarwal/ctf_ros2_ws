@@ -528,7 +528,8 @@ class GameServer(Node):
         #   scale = 1 m/unit,  R = [[0,-1],[-1,0]] (self-inverse reflection),  T = [5, 5] m
         #   vicon_xy = R @ sim_xy + T
         # Heading: θ_vicon = -π/2 - θ_sim  (derived from applying R to unit direction vector)
-        R2 = np.array([[0., -1.], [-1., 0.]])
+        # R2 = np.array([[0., -1.], [-1., 0.]])
+        R2 = np.array([[0., 1.], [-1., 0.]])
         T2 = np.array([5.0, 5.0])
 
         sim_xy = np.array([float(discrete_x), float(discrete_y)])
