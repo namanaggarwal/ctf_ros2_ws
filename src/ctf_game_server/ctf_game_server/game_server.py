@@ -15,42 +15,15 @@ from visualization_msgs.msg import Marker
 from nav_msgs.msg import Odometry
 
 import copy
-import functools
-import random
-import copy
 import numpy as np
-# import torch
-from gymnasium.utils import seeding
 
 from ctf_msgs.srv import JoinGame
-
-# import tf.transformations as tft
 
 # GraphCTF lives in the same package directory
 _PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 if _PKG_DIR not in sys.path:
     sys.path.insert(0, _PKG_DIR)
 from customCTF import GraphCTF
-
-def make_seeded_rngs(seed: int):
-    random.seed(seed)
-    np.random.seed(seed)
-    #torch.manual_seed(seed)
-    
-    """
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-    """
-    np_random, actual_seed = seeding.np_random(seed)
-    torch_rng = None #torch.Generator().manual_seed(actual_seed)
-    return {
-        "np_random": np_random,
-        "torch_rng": None,
-        "actual_seed": actual_seed
-    }
 
 class GameServer(Node):
     def __init__(self, **kwargs):
@@ -87,17 +60,11 @@ class GameServer(Node):
         self.rover_pose_subscriptions = {}
         self.server_to_rover_publishers = {}
 
-        self.blue_agents = []
-        self.red_agents = []
         self.num_agents_blue_team = 0
         self.num_agents_red_team = 0
-        
-        # self._seed = kwargs.get('seed', 0)
-        self.seed(seed=self._seed)
 
         self.ctf_red_agents = ['Red_0', 'Red_1']
         self.ctf_blue_agents = ['Blue_0', 'Blue_1']
-        self.agents = copy.deepcopy(self.ctf_blue_agents) + copy.deepcopy(self.ctf_red_agents)
         self.rr_to_ctf_agent_map = {}
 
         # GraphCTF env — used for spawn position generation only (env.step() never called)
@@ -117,13 +84,6 @@ class GameServer(Node):
 
         """Pending: rover_name hardware to rover_name in sim mapping: for eg. rro3:red_01, rr06:blue_02"""
         self.get_logger().info("GameServer started, waiting for rovers to join...")
-        
-        for rover in self.rovers_list:
-            server_to_rover_channel = self.rovers_info[rover]['server_to_rover_channel']
-            self.publisher_serve_to_rover = self.create_publisher(
-                    ServerToRoverMessage,
-                    server_to_rover_channel,
-                )
         
         self.game_started = False
 
@@ -423,93 +383,6 @@ class GameServer(Node):
             state[ctf_agent] = sim_xy
         return state
     
-    def _sample_init_heading(self, agent_team, x, y):
-        assert agent_team == "Blue" or agent_team == "Red"
-        if agent_team == "Blue":
-            possible_init_headings = copy.deepcopy(self.possible_init_headings_blue_team)
-            if x == 0: possible_init_headings.remove(3)
-            if x == self.grid_size - 1:
-                possible_init_headings.remove(0)
-                possible_init_headings.remove(1)
-            heading = self.np_random.choice(possible_init_headings) #np.random.choice(possible_init_headings)
-        elif agent_team == "Red":
-            possible_init_headings = copy.deepcopy(self.possible_init_headings_red_team)
-            if x == 0: possible_init_headings.remove(5)
-            if x == 1:
-                possible_init_headings.remove(0)
-                possible_init_headings.remove(7)
-            heading = self.np_random.choice(possible_init_headings)
-        return heading
-
-    @staticmethod
-    def _heading_to_direction_vector(heading):
-        vec = None
-        if heading == 0:
-            vec = np.array([ +1, 0 ])
-        elif heading == 1:
-            vec = np.array([ +1, +1 ])
-        elif heading == 2:
-            vec = np.array([ 0, +1 ])
-        elif heading == 3:
-            vec = np.array([ -1, +1 ])
-        elif heading == 4:
-            vec = np.array([ -1, 0 ])
-        elif heading == 5:
-            vec = np.array([ -1, -1 ])
-        elif heading == 6:
-            vec = np.array([ 0, -1 ])
-        elif heading == 7:
-            vec = np.array([ +1, -1 ])
-        return vec
-
-    def reset(self):
-
-        blue_team_init_xys = []
-        for agent_iter, blue_agent_num in enumerate(range(self.num_agents_blue_team)):
-            if agent_iter == 0:
-                rand_x = self.np_random.integers(0, self.grid_size)
-                rand_y = -self.np_random.integers(0, self.blue_init_spawn_y_lim + 1)
-                rand_theta = self._sample_init_heading(agent_team="Blue", x=rand_x, y=rand_y)
-                self.state["Blue_{}".format(blue_agent_num)] = np.array([rand_x, rand_y, rand_theta])
-                blue_team_init_xys.append((rand_x, rand_y))
-                continue
-            # A while loop to break ties in the x-y location to prevent collision during agent initialization.
-            while (rand_x, rand_y) in blue_team_init_xys:
-                rand_x = self.np_random.integers(0, self.grid_size)
-                rand_y = -self.np_random.integers(0, self.blue_init_spawn_y_lim + 1)
-            blue_team_init_xys.append((rand_x, rand_y))
-            rand_theta = self._sample_init_heading(agent_team="Blue", x=rand_x, y=rand_y)
-            self.state["Blue_{}".format(blue_agent_num)] = np.array([rand_x, rand_y, rand_theta])
-
-        red_team_init_xys = []
-        for agent_iter, red_agent_num in enumerate(range(self.num_agents_red_team)):
-
-            # set agent initial positions to a random x, y, theta position
-            if agent_iter == 0:
-                rand_x = self.np_random.integers(0, self.grid_size)
-                rand_y = -self.np_random.integers(self.grid_size - self.red_init_spawn_y_lim - 1, self.grid_size)
-                rand_theta = self._sample_init_heading(agent_team="Red", x=rand_x, y=rand_y)
-
-                if self.DEBUG_INIT_POSE:
-                    rand_x, rand_y, rand_theta = -3., -1., 0.
-                    self.get_logger().info(f"[DEBUG INIT POSE]: Red agent init pose (game frame) set to ({rand_x}, {rand_y}, {rand_theta}).")
-
-                self.state["Red_{}".format(red_agent_num)] = np.array([rand_x, rand_y, rand_theta])
-                red_team_init_xys.append((rand_x, rand_y))
-                continue
-            # A while loop to break ties in the x-y location to prevent collision during agent initialization.
-            while (rand_x, rand_y) in red_team_init_xys:
-                rand_x = self.np_random.integers(0, self.grid_size)
-                rand_y = -self.np_random.integers(self.grid_size - self.red_init_spawn_y_lim - 1, self.grid_size)
-            red_team_init_xys.append((rand_x, rand_y))
-            rand_theta = self._sample_init_heading(agent_team="Red", x=rand_x, y=rand_y)
-            self.state["Red_{}".format(red_agent_num)] = np.array([rand_x, rand_y, rand_theta])
-
-        #obs = self._observations() # !!!!!! --> method self._observations() not copied from CustomCTF_v0 to GameServer class.
-        obs = {agent: {} for agent in self.agents}
-        info = {agent: {} for agent in self.agents}
-        return obs, info
-
     def publish_sim_to_vicon_tf(self, t, R):
 
         rot = R_scipy.from_matrix(R)
@@ -571,40 +444,6 @@ class GameServer(Node):
         q = rot.as_quat()  # returns [x, y, z, w]
         return Quaternion(x=q[0], y=q[1], z=q[2], w=q[3])
 
-    def discrete_grid_abstraction_to_highbay_coordinates(self, discrete_x, discrete_y, heading):
-
-        x, y = a*discrete_x, a*discrete_y # game ctf discrete frame
-
-        x_vicon, y_vicon = 4*a + delta_x, 4*a + delta_y # vicon coords in game ctf discrete frame
-
-        # game ctf -> vicon frame: 90 degrees counter-clockwise
-        # !? : Convert above to quaternion rotation and build tf from this rotation and x_vicon, y_vicon.
-        # !?2: Then convert x, y from game_ctf_frame to vicon_frame.
-
-        heading_in_radians = heading * np.pi / 4. # game_ctf_frame
-        # !? convert above to vicon frame.self._seed
-
-        q = tft.quaternion_from_euler(0.0, 0.0, -1.57079632679)
-
-        from geometry_msgs.msg import TransformStamped
-
-        t = TransformStamped()
-        t.header.frame_id = "sim_frame"      # parent
-        t.child_frame_id  = "vicon_frame"    # child
-
-        # translation of vicon origin expressed in sim_frame
-        t.transform.translation.x = tx
-        t.transform.translation.y = ty
-        t.transform.translation.z = tz
-
-        # rotation: +90° clockwise (−π/2 yaw)
-        t.transform.rotation.x = 0.0
-        t.transform.rotation.y = 0.0
-        t.transform.rotation.z = -0.70710678
-        t.transform.rotation.w =  0.70710678
-
-        return
-
     def vicon_callback(self, msg, name):
         """Update rover poses from mocap system."""
         pose = msg.pose
@@ -658,13 +497,6 @@ class GameServer(Node):
         # global_vel = R_world_map @ local_vel
         
     
-    def seed(self, seed=None):
-        self.rngs = make_seeded_rngs(seed)
-        self._seed = self.rngs["actual_seed"]
-        self.np_random = self.rngs["np_random"]
-        self.torch_rng = self.rngs["torch_rng"]
-        return [self._seed]
-
 def main(args=None):
     rclpy.init(args=args)
     node = GameServer()
