@@ -284,6 +284,7 @@ else:
 | File | Bug | Fix |
 |---|---|---|
 | `src/ctf_rover/ctf_rover/rover_node.py` | `RuntimeError: mat1 and mat2 shapes cannot be multiplied (89x26 and 32x64)` — policy's `mpnn1` linear layer expects input dim 32 (`2×16`) but received 26 (`2×13`). Root cause: `_init_policy()` instantiated `GraphCTF` with `obs_version=2` (F=13), while the loaded checkpoint (`blue_mappo_final.zip`, `iter3_red_br.zip`) was trained with `obs_version=3` (F=16). | Changed `obs_version=2` → `obs_version=3` in `_init_policy()`. Changed `get_observation_v2(...)` → `get_observation_v3(...)` (×2) in `policy_step()`. |
+| `src/ctf_game_server/ctf_game_server/game_server.py` | `sim_frame_to_vicon_frame()` used the old 8×8 grid transform (`a=0.762 m`, `yaw=−π/2`, `T=[3.429, 3.429]`) while `rover_node._vicon_to_sim()` / `_sim_to_vicon()` use the graph-consistent transform (`R=[[0,−1],[−1,0]]`, `T=[5,5]`, `scale=1 m/unit`). This caused the initial `current_node_idx` snap in `server_to_rover_callback` (line 221) to map the spawn Vicon pose through the wrong inverse transform, landing on an arbitrary graph node. | Replaced the old grid transform in `sim_frame_to_vicon_frame()` with `vicon_xy = R2 @ sim_xy + T2` (R2=[[0,−1],[−1,0]], T2=[5,5]). Heading corrected to `θ_vicon = −π/2 − θ_sim` (derived analytically from applying R to unit direction vector). Debug TF publisher updated to match (3D R3, t3). |
 
 ### Attribute name corrections (vs. plan)
 - `env.state[agent]` — agent positions (not `env.agent_nodes`)

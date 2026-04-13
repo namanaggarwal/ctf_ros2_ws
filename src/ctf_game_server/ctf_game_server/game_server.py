@@ -524,31 +524,24 @@ class GameServer(Node):
 
     # @staticmethod
     def sim_frame_to_vicon_frame(self, discrete_x, discrete_y, discrete_heading):
-        a = 0.762 # meters
-        delta_x = a / 2. # meters
-        delta_y = a / 2. # meters
+        # Graph-consistent transform — matches rover_node._sim_to_vicon / _R_SIM_VICON:
+        #   scale = 1 m/unit,  R = [[0,-1],[-1,0]] (self-inverse reflection),  T = [5, 5] m
+        #   vicon_xy = R @ sim_xy + T
+        # Heading: θ_vicon = -π/2 - θ_sim  (derived from applying R to unit direction vector)
+        R2 = np.array([[0., -1.], [-1., 0.]])
+        T2 = np.array([5.0, 5.0])
 
-        import numpy as np
-        yaw = -np.pi/2 # np.pi/2
-        R = np.array([
-            [ np.cos(yaw), -np.sin(yaw), 0],
-            [ np.sin(yaw),  np.cos(yaw), 0],
-            [          0,           0, 1]
-        ])
-        tx, ty, tz = 4*a + delta_y, 4*a + delta_x, 0. # 4*a + delta_y, -(4*a + delta_x), 0. # t_from_sim_to_vicon is position of sim origin in Vicon frame:
-        t = np.array([tx, ty, tz])
+        sim_xy = np.array([float(discrete_x), float(discrete_y)])
+        vicon_xy = R2 @ sim_xy + T2
+        p_vicon_pos = np.array([vicon_xy[0], vicon_xy[1], 0.0])
 
-        self.publish_sim_to_vicon_tf(t, R)
+        p_sim_yaw = (np.pi / 4.0) * discrete_heading
+        p_vicon_heading = -np.pi / 2.0 - p_sim_yaw
 
-        p_sim_pos = np.array([a*discrete_x, a*discrete_y, 0.])
-
-        p_sim_yaw = (+np.pi/4.) * discrete_heading
-
-        p_pos_sim_to_vicon = R@p_sim_pos + t
-        p_yaw_sim_to_vicon = p_sim_yaw - yaw
-
-        p_vicon_pos = p_pos_sim_to_vicon
-        p_vicon_heading = p_yaw_sim_to_vicon
+        # Publish debug TF with updated transform
+        R3 = np.array([[0., -1., 0.], [-1., 0., 0.], [0., 0., 1.]])
+        t3 = np.array([T2[0], T2[1], 0.0])
+        self.publish_sim_to_vicon_tf(t3, R3)
 
         if self.DEBUG_INIT_POSE:
             self.get_logger().info(f"[DEBUG INIT POSE]: Converted pose (vicon frame) = {p_vicon_pos}")
