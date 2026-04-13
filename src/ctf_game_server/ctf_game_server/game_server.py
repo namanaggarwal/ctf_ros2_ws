@@ -539,7 +539,7 @@ class GameServer(Node):
         p_vicon_heading = -np.pi / 2.0 - p_sim_yaw
 
         # Publish debug TF with updated transform
-        R3 = np.array([[0., -1., 0.], [-1., 0., 0.], [0., 0., 1.]])
+        R3 = np.array([[0., 1., 0.], [-1., 0., 0.], [0., 0., 1.]])
         t3 = np.array([T2[0], T2[1], 0.0])
         self.publish_sim_to_vicon_tf(t3, R3)
 
