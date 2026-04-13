@@ -14,10 +14,11 @@ from tf2_ros import TransformException
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from ctf_msgs.srv import JoinGame
 
-# Rotation matrix for sim ↔ Vicon coordinate transform.
-# Derived from: +x_vicon = -y_sim, +y_vicon = -x_sim, scale = 1 m/unit.
-# R is self-inverse: vicon_to_sim and sim_to_vicon use the same matrix.
-_R_SIM_VICON = np.array([[0.0, -1.0], [1.0, 0.0]])
+# Coordinate transform: x_sim = -y_vicon, y_sim = +x_vicon, scale = 1 m/unit.
+# sim → vicon: R_SIM_TO_VICON @ sim_xy + T   (90° CW rotation, det=+1)
+# vicon → sim: R_VICON_TO_SIM @ (vicon_xy - T)  (90° CCW = transpose)
+_R_SIM_TO_VICON = np.array([[0.0, 1.0], [-1.0, 0.0]])
+_R_VICON_TO_SIM = np.array([[0.0, -1.0], [1.0, 0.0]])
 _T_VICON = np.array([5.0, 5.0])  # Vicon position of sim origin [0, 0]
 
 
@@ -266,11 +267,11 @@ class RoverNode(Node):
 
     def _vicon_to_sim(self, vicon_xy: np.ndarray) -> np.ndarray:
         """Vicon [x, y] (metres) → sim [x, y] (graph units)."""
-        return _R_SIM_VICON @ (vicon_xy - _T_VICON)
+        return _R_VICON_TO_SIM @ (vicon_xy - _T_VICON)
 
     def _sim_to_vicon(self, sim_xy: np.ndarray) -> np.ndarray:
         """Sim [x, y] (graph units) → Vicon [x, y] (metres)."""
-        return _R_SIM_VICON @ sim_xy + _T_VICON
+        return _R_SIM_TO_VICON @ sim_xy + _T_VICON
 
     # ------------------------------------------------------------------
     # Nearest graph node lookup

@@ -535,11 +535,11 @@ class GameServer(Node):
 
     # @staticmethod
     def sim_frame_to_vicon_frame(self, sim_x, sim_y, sim_heading=0):
-        # Graph-consistent transform — matches rover_node._sim_to_vicon / _R_SIM_VICON:
-        #   scale = 1 m/unit,  R = [[0,-1],[-1,0]] (self-inverse reflection),  T = [5, 5] m
-        #   vicon_xy = R @ sim_xy + T
-        # Heading: θ_vicon = -π/2 - θ_sim  (derived from applying R to unit direction vector)
-        # Note: R is a reflection (det=-1), not a valid rotation, so no debug TF is published.
+        # Graph-consistent transform — matches rover_node._R_SIM_TO_VICON / _T_VICON:
+        #   Axes: x_sim = -y_vicon, y_sim = +x_vicon, scale = 1 m/unit
+        #   R_sim_to_vicon = [[0,1],[-1,0]] (90° CW, det=+1),  T = [5, 5] m
+        #   vicon_xy = R2 @ sim_xy + T
+        # Heading: θ_vicon = θ_sim - π/2  (derived from R2 applied to unit direction vector)
         R2 = np.array([[0., 1.], [-1., 0.]])
         T2 = np.array([5.0, 5.0])
 
@@ -548,7 +548,7 @@ class GameServer(Node):
         p_vicon_pos = np.array([vicon_xy[0], vicon_xy[1], 0.0])
 
         p_sim_yaw = (np.pi / 4.0) * sim_heading
-        p_vicon_heading = -np.pi / 2.0 - p_sim_yaw
+        p_vicon_heading = p_sim_yaw - np.pi / 2.0
 
         # Publish debug TF with updated transform
         R3 = np.array([[R2[0][0], R2[0][1], 0.], [R2[1][0], R2[1][1], 0.], [0., 0., 1.]])
