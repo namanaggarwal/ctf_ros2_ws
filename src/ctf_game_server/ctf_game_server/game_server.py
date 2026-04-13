@@ -344,6 +344,8 @@ class GameServer(Node):
             rr_name = self.ctf_agent_to_rr_map[ctf_agent]
             msg = ServerToRoverMessage()
             msg.command = 'INIT'
+            msg.roster_rover_names = list(self.rr_to_ctf_agent_map.keys())
+            msg.roster_ctf_agent_names = list(self.rr_to_ctf_agent_map.values())
 
             if self.DEBUG_INIT_POSE:
                 self.get_logger().info(f"[DEBUG INIT POSE] Received init pose for {ctf_agent}: {pose}")

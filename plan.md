@@ -300,12 +300,24 @@ source install/setup.bash
 pip install supersuit pettingzoo stable-baselines3 torch torch-geometric networkx gymnasium
 ```
 
-### Before launching — adjust rover names
-Edit the four `config/params_*.yaml` files so `all_rover_names` matches the actual
-`VEHTYPE+VEHNUM` values set on each physical rover machine (e.g. `RR01`–`RR04`).
-The order must be consistent across all four files.
+### Before launching
+Update `total_rovers` in `ctf_game_server/config/params.yaml` to match the number of
+physical rovers (e.g. `4`).
 
-Also update `total_rovers` in `ctf_game_server/config/params.yaml` to `4`.
+Each rover's `config/params_*.yaml` now only contains three fields — no rover names,
+teams, or indices to keep in sync:
+
+```yaml
+# params_blue_0.yaml (same as params_blue_1.yaml)
+rover_node:
+  ros__parameters:
+    team: "BLUE"
+    policy_zip_path: "/home/swarm/code/ctf_ros2_ws/install/ctf_rover/share/ctf_rover/policies/blue_mappo_final.zip"
+    arrival_tolerance: 0.5
+```
+
+The full rover-to-CTF-agent mapping is assigned by the game server at join time and
+broadcast to every rover inside the `INIT` message — no manual coordination needed.
 
 ### Game server (one machine or ground station)
 ```bash
@@ -318,11 +330,10 @@ ros2 launch ctf_game_server game_server.launch.py
 export VEHTYPE=RR
 export VEHNUM=01   # change per rover: 01, 02, 03, 04
 
-# Pick the correct params file for this rover's role:
-#   RR01 = Blue_0  →  params_blue_0.yaml
-#   RR02 = Blue_1  →  params_blue_1.yaml
-#   RR03 = Red_0   →  params_red_0.yaml
-#   RR04 = Red_1   →  params_red_1.yaml
+# Pick the params file for this rover's team — both rovers on the same team use the
+# same file (team_index is assigned automatically by the server):
+#   Blue rovers  →  params_blue_0.yaml  (or params_blue_1.yaml — identical)
+#   Red rovers   →  params_red_0.yaml   (or params_red_1.yaml  — identical)
 
 source ~/ctf_ros2_ws/install/setup.bash
 PARAMS=$(ros2 pkg prefix ctf_rover)/share/ctf_rover/config/params_blue_0.yaml
@@ -337,9 +348,15 @@ tmuxinator start -p src/ctf_rover/tmux/tmux_ctf_launch.yaml
 
 ### Sequence of events after launch
 1. Game server waits for `total_rovers` (4) join-game calls.
-2. Each rover starts, calls `/ctf/join_game`, waits for INIT.
-3. Server assigns spawn positions, sends `INIT` to each rover.
-4. Each rover:
+2. Each rover starts, calls `/ctf/join_game` with its name and team; the server assigns
+   a CTF agent name (`Blue_0`, `Blue_1`, `Red_0`, `Red_1`) based on join order within
+   each team.
+3. Server assigns spawn positions, sends `INIT` to each rover. The `INIT` message
+   includes the full roster (`roster_rover_names` / `roster_ctf_agent_names`).
+4. Each rover on receiving `INIT`:
+   - Builds `rr_to_ctf` and derives its own `ctf_agent_name` and `team_index` from
+     the roster.
+   - Subscribes to `/{name}/world` for all roster members.
    - Publishes spawn goal to DYNUS (existing behaviour).
    - Initialises its local `GraphCTF` env and loads its team GNN policy (~5–10 s).
    - After 2 s delay, fires first `policy_step()`.

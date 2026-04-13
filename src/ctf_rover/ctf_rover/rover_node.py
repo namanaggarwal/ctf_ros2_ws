@@ -35,30 +35,19 @@ class RoverNode(Node):
         # ROS parameters
         self.declare_parameter("team", "RED")
         self.declare_parameter("policy_zip_path", "")
-        self.declare_parameter("all_rover_names", ["RR01", "RR02", "RR03", "RR04"])
-        self.declare_parameter("all_rover_teams", ["BLUE", "BLUE", "RED", "RED"])
-        self.declare_parameter("all_rover_team_indices", [0, 1, 0, 1])
-        self.declare_parameter("team_index", 0)
         self.declare_parameter("arrival_tolerance", 0.5)
 
         self.rover_team_name = self.get_parameter("team").value
-        self.team_index = self.get_parameter("team_index").value
         self.arrival_tolerance = self.get_parameter("arrival_tolerance").value
 
-        all_names = list(self.get_parameter("all_rover_names").value)
-        all_teams = list(self.get_parameter("all_rover_teams").value)
-        all_indices = list(self.get_parameter("all_rover_team_indices").value)
-
-        # Map physical rover names → CTF agent names (e.g. "RR01" → "Blue_0")
-        self.rr_to_ctf = {
-            name: f"{'Blue' if team.upper() == 'BLUE' else 'Red'}_{idx}"
-            for name, team, idx in zip(all_names, all_teams, all_indices)
-        }
-        self.ctf_agent_name = self.rr_to_ctf[self.rover_name]
+        # Roster and CTF agent identity — built from the server's INIT message.
+        # Not available at startup; populated in server_to_rover_callback.
+        self.rr_to_ctf = {}
+        self.ctf_agent_name = None
+        self.team_index = None
 
         self.get_logger().info(
-            f"Rover {self.rover_name} | team={self.rover_team_name} "
-            f"| team_index={self.team_index} | ctf_agent={self.ctf_agent_name}"
+            f"Rover {self.rover_name} | team={self.rover_team_name} | waiting for INIT roster"
         )
 
         # Join game service
@@ -92,15 +81,8 @@ class RoverNode(Node):
         self.local_frame = f"{self.rover_name}/map"
         self.init_timer = self.create_timer(0.2, self.initialize_tf)
 
-        # World-state: latest Vicon poses for all rovers
-        self.all_rover_poses = {name: None for name in all_names}
-        for name in all_names:
-            self.create_subscription(
-                PoseStamped,
-                f"/{name}/world",
-                lambda msg, n=name: self._world_state_callback(msg, n),
-                10,
-            )
+        # World-state: populated once the server's INIT roster arrives
+        self.all_rover_poses = {}
 
         # Policy / env (lazy — initialised on first INIT command)
         self.env = None
@@ -183,6 +165,26 @@ class RoverNode(Node):
         self.get_logger().info(f"server_to_rover_callback: command={command}")
 
         if command == "INIT":
+            # Build rr_to_ctf from the server-assigned roster (first INIT only).
+            if not self.rr_to_ctf:
+                for rr, ctf in zip(msg.roster_rover_names, msg.roster_ctf_agent_names):
+                    self.rr_to_ctf[rr] = ctf
+                self.ctf_agent_name = self.rr_to_ctf[self.rover_name]
+                # team_index is the trailing digit in the CTF agent name (e.g. "Blue_1" → 1)
+                self.team_index = int(self.ctf_agent_name.split("_")[1])
+                self.all_rover_poses = {name: None for name in self.rr_to_ctf}
+                for name in self.rr_to_ctf:
+                    self.create_subscription(
+                        PoseStamped,
+                        f"/{name}/world",
+                        lambda m, n=name: self._world_state_callback(m, n),
+                        10,
+                    )
+                self.get_logger().info(
+                    f"[INIT] Roster received: {self.rr_to_ctf} | "
+                    f"ctf_agent={self.ctf_agent_name} team_index={self.team_index}"
+                )
+
             self.initialize_tf()
 
             goal = msg.commanded_goal
