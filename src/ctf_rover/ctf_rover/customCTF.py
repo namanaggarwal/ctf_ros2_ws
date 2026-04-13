@@ -2566,7 +2566,7 @@ class GraphCTF(ParallelEnv):
     Custom ActorCriticPolicy by SB3: takes in batched obs from the VecEnv wrapper and returns batched actions, log_probs and values.
     """
 
-from graphpolicy import GraphPolicy
+# from graphpolicy import GraphPolicy
 class GraphCoopEnv(ParallelEnv): #CoopEnv_v0 with policy_paths instead of policies.
     """
     This class inherits from ParallelEnv and provides a Cooperative environment with the opponent team policy fixed (as given by the input PolicySet) in the MixedCompCoop setting (the Capture-the-Flag environment).
