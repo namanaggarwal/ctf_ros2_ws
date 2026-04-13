@@ -457,7 +457,7 @@ class GameServer(Node):
         for agent_iter, blue_agent_num in enumerate(range(self.num_agents_blue_team)):
             if agent_iter == 0:
                 rand_x = self.np_random.integers(0, self.grid_size)
-                rand_y = self.np_random.integers(0, self.blue_init_spawn_y_lim + 1)
+                rand_y = -self.np_random.integers(0, self.blue_init_spawn_y_lim + 1)
                 rand_theta = self._sample_init_heading(agent_team="Blue", x=rand_x, y=rand_y)
                 self.state["Blue_{}".format(blue_agent_num)] = np.array([rand_x, rand_y, rand_theta])
                 blue_team_init_xys.append((rand_x, rand_y))
@@ -465,7 +465,7 @@ class GameServer(Node):
             # A while loop to break ties in the x-y location to prevent collision during agent initialization.
             while (rand_x, rand_y) in blue_team_init_xys:
                 rand_x = self.np_random.integers(0, self.grid_size)
-                rand_y = self.np_random.integers(0, self.blue_init_spawn_y_lim + 1)
+                rand_y = -self.np_random.integers(0, self.blue_init_spawn_y_lim + 1)
             blue_team_init_xys.append((rand_x, rand_y))
             rand_theta = self._sample_init_heading(agent_team="Blue", x=rand_x, y=rand_y)
             self.state["Blue_{}".format(blue_agent_num)] = np.array([rand_x, rand_y, rand_theta])
@@ -476,7 +476,7 @@ class GameServer(Node):
             # set agent initial positions to a random x, y, theta position
             if agent_iter == 0:
                 rand_x = self.np_random.integers(0, self.grid_size)
-                rand_y = self.np_random.integers(self.grid_size - self.red_init_spawn_y_lim - 1, self.grid_size)
+                rand_y = -self.np_random.integers(self.grid_size - self.red_init_spawn_y_lim - 1, self.grid_size)
                 rand_theta = self._sample_init_heading(agent_team="Red", x=rand_x, y=rand_y)
 
                 if self.DEBUG_INIT_POSE:
@@ -489,7 +489,7 @@ class GameServer(Node):
             # A while loop to break ties in the x-y location to prevent collision during agent initialization.
             while (rand_x, rand_y) in red_team_init_xys:
                 rand_x = self.np_random.integers(0, self.grid_size)
-                rand_y = self.np_random.integers(self.grid_size - self.red_init_spawn_y_lim - 1, self.grid_size)
+                rand_y = -self.np_random.integers(self.grid_size - self.red_init_spawn_y_lim - 1, self.grid_size)
             red_team_init_xys.append((rand_x, rand_y))
             rand_theta = self._sample_init_heading(agent_team="Red", x=rand_x, y=rand_y)
             self.state["Red_{}".format(red_agent_num)] = np.array([rand_x, rand_y, rand_theta])
@@ -529,13 +529,13 @@ class GameServer(Node):
         delta_y = a / 2. # meters
 
         import numpy as np
-        yaw = np.pi/2
+        yaw = -np.pi/2 # np.pi/2
         R = np.array([
             [ np.cos(yaw), -np.sin(yaw), 0],
             [ np.sin(yaw),  np.cos(yaw), 0],
             [          0,           0, 1]
         ])
-        tx, ty, tz = 4*a + delta_y, -(4*a + delta_x), 0. # t_from_sim_to_vicon is position of sim origin in Vicon frame:
+        tx, ty, tz = 4*a + delta_y, 4*a + delta_x, 0. # 4*a + delta_y, -(4*a + delta_x), 0. # t_from_sim_to_vicon is position of sim origin in Vicon frame:
         t = np.array([tx, ty, tz])
 
         self.publish_sim_to_vicon_tf(t, R)
