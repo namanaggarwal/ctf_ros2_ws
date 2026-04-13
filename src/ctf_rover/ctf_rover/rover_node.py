@@ -1,6 +1,7 @@
 import os
 import sys
 import numpy as np
+import networkx as nx
 
 import rclpy
 from rclpy.node import Node
@@ -93,6 +94,9 @@ class RoverNode(Node):
         self.current_node_idx = None
         self.goal_node_idx = None
         self._first_step_timer = None
+        # Prevents re-triggering policy_step until the rover physically departs the goal area.
+        # Set True after every policy_step(); cleared once dist to goal > arrival_tolerance.
+        self._waiting_to_depart = False
 
         self.get_logger().info("RoverNode initialised, waiting for INIT from server.")
 
@@ -306,10 +310,17 @@ class RoverNode(Node):
         goal_vicon = self._sim_to_vicon(goal_sim)
         dist = np.linalg.norm(np.array([p.x, p.y]) - goal_vicon)
 
+        if self._waiting_to_depart:
+            # Block re-triggering until the rover physically leaves the goal area.
+            if dist > self.arrival_tolerance:
+                self._waiting_to_depart = False
+            return
+
         if dist < self.arrival_tolerance:
             self.get_logger().info(
                 f"[POLICY] Goal reached (dist={dist:.3f}m). Stepping policy."
             )
+            self._waiting_to_depart = True
             self.policy_step()
 
     # ------------------------------------------------------------------
@@ -325,6 +336,28 @@ class RoverNode(Node):
             sim_xy = self._vicon_to_sim(pose[:2])
             node_idx = self._nearest_node_idx(sim_xy)
             self.env.state[ctf_name] = self.env.idx_to_node[node_idx]
+
+        # Recompute pairwise distances for min_opp_distance / min_teammate_distance (obs features 12 & 13).
+        # env.step() is never called so these must be updated here after every state write.
+        self.env.min_opp_distance = {a: 1.0 for a in self.env.agents}
+        self.env.min_teammate_distance = {a: 1.0 for a in self.env.agents}
+        for agent_0, agent_1 in self.env.all_agent_pairings:
+            if self.env.state[agent_0] is None or self.env.state[agent_1] is None:
+                continue
+            try:
+                d = nx.shortest_path_length(
+                    self.env.graph,
+                    source=self.env.state[agent_0],
+                    target=self.env.state[agent_1],
+                ) / self.env.graph_diameter
+            except nx.NetworkXNoPath:
+                d = 1.0
+            if agent_0[0] == agent_1[0]:
+                self.env.min_teammate_distance[agent_0] = min(d, self.env.min_teammate_distance[agent_0])
+                self.env.min_teammate_distance[agent_1] = min(d, self.env.min_teammate_distance[agent_1])
+            else:
+                self.env.min_opp_distance[agent_0] = min(d, self.env.min_opp_distance[agent_0])
+                self.env.min_opp_distance[agent_1] = min(d, self.env.min_opp_distance[agent_1])
 
         # Flag discovery: any Blue rover in a frontier node → all Blue agents know flag
         if self.rover_team_name.upper() == "BLUE":
@@ -357,6 +390,7 @@ class RoverNode(Node):
     # ------------------------------------------------------------------
 
     def _first_policy_step_once(self):
+        self._waiting_to_depart = False
         self.policy_step()
         self._first_step_timer.cancel()
         self._first_step_timer = None

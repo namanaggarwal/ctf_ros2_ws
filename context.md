@@ -158,6 +158,12 @@ Standalone version of the coordinate transform logic in `RoverNode`. Subscribes 
 
 ## Changelog
 
+### 2026-04-14
+- **Coordinate transform update (`rover_node.py`, `game_server.py`)**: Axes redefined as `x_sim = -y_vicon, y_sim = +x_vicon` (proper 90° CW rotation, det=+1). `_R_SIM_VICON` split into `_R_SIM_TO_VICON = [[0,1],[-1,0]]` and `_R_VICON_TO_SIM = [[0,-1],[1,0]]`. `sim_frame_to_vicon_frame` heading formula corrected to `θ_vicon = θ_sim − π/2`. Blue/Red spawn headings explicitly set. Debug TF now uses valid rotation.
+- **GraphCTF spawn (`game_server.py`)**: `compute_initial_poses()` replaced with GraphCTF-based logic — calls `ctf_env.reset()`, reads `node_pose_dict` for sim [x,y] per agent. Old 8×8 grid `reset()` removed. `customCTF.py` copied into game_server package.
+- **Bug fix — stale pairwise distances (`rover_node.py`)**: `min_opp_distance` / `min_teammate_distance` (obs v3 features 12 & 13) were frozen at spawn since `env.step()` is never called. Fixed by recomputing BFS pairwise distances in `_update_env_state()` on every policy step.
+- **Bug fix — policy_step spam (`rover_node.py`)**: `_world_state_callback` at ~100 Hz was calling `policy_step()` repeatedly while rover sat at goal. Fixed with `_waiting_to_depart` flag: blocks re-triggering until rover leaves goal area (`dist > arrival_tolerance`). Stay action holds position indefinitely by design.
+
 ### 2026-04-13
 - **Bug fix (`rover_node.py`)**: Fixed `RuntimeError: mat1 and mat2 shapes cannot be multiplied (89×26 and 32×64)` on first GNN inference. Policy checkpoints (`blue_mappo_final.zip`, `iter3_red_br.zip`) were trained with `obs_version=3` (F=16 node features, MPNN message dim = 2×16 = 32). `_init_policy()` was creating `GraphCTF` with `obs_version=2` (F=13, message dim = 26). Fixed by changing `obs_version=2` → `obs_version=3` and `get_observation_v2` → `get_observation_v3` (×2) in `rover_node.py`.
 - **Bug fix (`game_server.py`)**: `sim_frame_to_vicon_frame()` used the old 8×8 grid transform (`a=0.762 m`, `yaw=−π/2`, `T=[3.429, 3.429]`), inconsistent with the graph-based transform in `rover_node._vicon_to_sim()` (`R=[[0,−1],[−1,0]]`, `T=[5,5]`, scale=1 m/unit). This caused the initial `current_node_idx` in `server_to_rover_callback` to snap to an arbitrary graph node. Fixed by replacing the old grid math with `vicon_xy = R @ sim_xy + [5,5]` and heading `θ_vicon = −π/2 − θ_sim`.

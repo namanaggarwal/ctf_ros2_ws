@@ -260,7 +260,7 @@ else:
 
 ---
 
-## Changelog (implemented 2026-04-12; updated 2026-04-13)
+## Changelog (implemented 2026-04-12; updated 2026-04-13, 2026-04-14)
 
 ### New files
 | File | Description |
@@ -285,6 +285,16 @@ else:
 |---|---|---|
 | `src/ctf_rover/ctf_rover/rover_node.py` | `RuntimeError: mat1 and mat2 shapes cannot be multiplied (89x26 and 32x64)` — policy's `mpnn1` linear layer expects input dim 32 (`2×16`) but received 26 (`2×13`). Root cause: `_init_policy()` instantiated `GraphCTF` with `obs_version=2` (F=13), while the loaded checkpoint (`blue_mappo_final.zip`, `iter3_red_br.zip`) was trained with `obs_version=3` (F=16). | Changed `obs_version=2` → `obs_version=3` in `_init_policy()`. Changed `get_observation_v2(...)` → `get_observation_v3(...)` (×2) in `policy_step()`. |
 | `src/ctf_game_server/ctf_game_server/game_server.py` | `sim_frame_to_vicon_frame()` used the old 8×8 grid transform (`a=0.762 m`, `yaw=−π/2`, `T=[3.429, 3.429]`) while `rover_node._vicon_to_sim()` / `_sim_to_vicon()` use the graph-consistent transform (`R=[[0,−1],[−1,0]]`, `T=[5,5]`, `scale=1 m/unit`). This caused the initial `current_node_idx` snap in `server_to_rover_callback` (line 221) to map the spawn Vicon pose through the wrong inverse transform, landing on an arbitrary graph node. | Replaced the old grid transform in `sim_frame_to_vicon_frame()` with `vicon_xy = R2 @ sim_xy + T2` (R2=[[0,−1],[−1,0]], T2=[5,5]). Heading corrected to `θ_vicon = −π/2 − θ_sim` (derived analytically from applying R to unit direction vector). Debug TF publisher updated to match (3D R3, t3). |
+
+### Fixes and improvements (2026-04-14)
+
+| File | Change |
+|---|---|
+| `src/ctf_rover/ctf_rover/rover_node.py` | **Coordinate transform update**: axes redefined as `x_sim = -y_vicon, y_sim = +x_vicon` (proper 90° CW rotation, det=+1). Split `_R_SIM_VICON` into `_R_SIM_TO_VICON = [[0,1],[-1,0]]` and `_R_VICON_TO_SIM = [[0,-1],[1,0]]`; updated `_sim_to_vicon` and `_vicon_to_sim` accordingly. |
+| `src/ctf_game_server/ctf_game_server/game_server.py` | **Coordinate transform update**: `sim_frame_to_vicon_frame` updated to match new rotation (`R2 = [[0,1],[-1,0]]`). Heading formula corrected to `θ_vicon = θ_sim − π/2`. Blue/Red spawn headings now explicitly set (Blue discrete=2=+y_sim, Red discrete=6=−y_sim). Debug TF now uses valid rotation R3 (det=+1). |
+| `src/ctf_game_server/ctf_game_server/game_server.py` | **GraphCTF spawn**: `compute_initial_poses()` now calls `ctf_env.reset()` and reads `node_pose_dict` — spawn positions are graph nodes. Removed old 8×8 grid `reset()` and `_sample_init_heading()`. Copied `customCTF.py` into game_server package. |
+| `src/ctf_rover/ctf_rover/rover_node.py` | **Bug fix — stale pairwise distances**: `min_opp_distance` and `min_teammate_distance` (obs v3 features 12 & 13) were set at `env.reset()` and never updated since `env.step()` is never called. Fixed by recomputing pairwise BFS distances in `_update_env_state()` after every state write. |
+| `src/ctf_rover/ctf_rover/rover_node.py` | **Bug fix — policy_step spam**: `_world_state_callback` fires at ~100 Hz; if the rover sat within `arrival_tolerance` of the goal it would call `policy_step()` on every pose message. Fixed with `_waiting_to_depart` flag: after each `policy_step()`, the flag blocks re-triggering until the rover physically leaves the goal area (`dist > arrival_tolerance`). Stay action correctly holds position indefinitely (rover never departs). |
 
 ### Attribute name corrections (vs. plan)
 - `env.state[agent]` — agent positions (not `env.agent_nodes`)
