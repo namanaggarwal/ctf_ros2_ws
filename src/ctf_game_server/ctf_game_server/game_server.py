@@ -1,3 +1,5 @@
+import os
+import sys
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
@@ -24,6 +26,12 @@ from ctf_msgs.srv import JoinGame
 
 # import tf.transformations as tft
 
+# GraphCTF lives in the same package directory
+_PKG_DIR = os.path.dirname(os.path.abspath(__file__))
+if _PKG_DIR not in sys.path:
+    sys.path.insert(0, _PKG_DIR)
+from customCTF import GraphCTF
+
 def make_seeded_rngs(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -49,15 +57,9 @@ class GameServer(Node):
         super().__init__("ctf")
         # self.grid_size = 8
         # self.ctf_player_config = kwargs.get('ctf_player_config', '2v2')
-        self.ctf_env = None # !? --> move CTF custom environment to within the same directory and import CustomCTF_v1.
-        self.blue_init_spawn_y_lim = 2 # Measured from bottom of the grid.
-        self.possible_init_headings_blue_team = [0, 1, 2, 3] # possible init headings = (0, 45, 90, 135)
-        self.red_init_spawn_y_lim = 2 # Measured from top of the grid.
-        self.possible_init_headings_red_team = [0, 7, 6, 5] # possible init headings = (0, -45, -90, -135)
 
         # self.goal_height = -0.01
         
-        self.declare_parameter("grid_size", 8)
         self.declare_parameter("goal_height", -0.01)
         self.declare_parameter("total_rovers", 3)
         self.declare_parameter("seed", 0)
@@ -65,7 +67,6 @@ class GameServer(Node):
         self.declare_parameter("use_dlio", False)
 
         self.goal_height = self.get_parameter("goal_height").value
-        self.grid_size = self.get_parameter("grid_size").value
         self.total_rovers = self.get_parameter("total_rovers").value
         self._seed = self.get_parameter("seed").value
         self.ctf_player_config = self.get_parameter("ctf_player_config").value
@@ -98,7 +99,15 @@ class GameServer(Node):
         self.ctf_blue_agents = ['Blue_0', 'Blue_1']
         self.agents = copy.deepcopy(self.ctf_blue_agents) + copy.deepcopy(self.ctf_red_agents)
         self.rr_to_ctf_agent_map = {}
-        self.state = {}
+
+        # GraphCTF env — used for spawn position generation only (env.step() never called)
+        self.ctf_env = GraphCTF(
+            ctf_player_config=self.ctf_player_config,
+            fixed_flag_hypothesis=1,
+            obs_version=3,
+            seed=self._seed,
+        )
+        self.get_logger().info("GraphCTF environment initialised for spawn generation.")
 
         self.global_frame = "world"
         self.tf_buffer = tf2_ros.Buffer()
@@ -350,8 +359,8 @@ class GameServer(Node):
             if self.DEBUG_INIT_POSE:
                 self.get_logger().info(f"[DEBUG INIT POSE] Received init pose for {ctf_agent}: {pose}")
 
-            discrete_x, discrete_y, discrete_heading = pose
-            p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(discrete_x, discrete_y, discrete_heading)
+            sim_x, sim_y = pose
+            p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(sim_x, sim_y)
             q = GameServer.yaw_to_quaternion(p_vicon_heading)
 
             vel_vicon_xy = np.array([np.cos(p_vicon_heading), np.sin(p_vicon_heading)])
@@ -403,13 +412,13 @@ class GameServer(Node):
         return
     
     def compute_initial_poses(self):
-        self.reset()
-        """
-        RR03_init_pose = (+2.8, -1.4, 0.)
-        RR06_init_pose = (+0., +1.4, 0.)
-        pose_dict = {'RR03': RR03_init_pose, 'RR06': RR06_init_pose}
-        """
-        state = copy.deepcopy(self.state)
+        """Sample spawn positions from GraphCTF, returning {ctf_agent: [sim_x, sim_y]}."""
+        self.ctf_env.reset()
+        state = {}
+        for ctf_agent in self.rr_to_ctf_agent_map.values():
+            node = self.ctf_env.state[ctf_agent]
+            sim_xy = np.array(self.ctf_env.node_pose_dict[node], dtype=float)
+            state[ctf_agent] = sim_xy
         return state
     
     def _sample_init_heading(self, agent_team, x, y):
@@ -523,26 +532,21 @@ class GameServer(Node):
         self.tf_broadcaster.sendTransform(t_msg)
 
     # @staticmethod
-    def sim_frame_to_vicon_frame(self, discrete_x, discrete_y, discrete_heading):
+    def sim_frame_to_vicon_frame(self, sim_x, sim_y, sim_heading=0):
         # Graph-consistent transform — matches rover_node._sim_to_vicon / _R_SIM_VICON:
         #   scale = 1 m/unit,  R = [[0,-1],[-1,0]] (self-inverse reflection),  T = [5, 5] m
         #   vicon_xy = R @ sim_xy + T
         # Heading: θ_vicon = -π/2 - θ_sim  (derived from applying R to unit direction vector)
-        # R2 = np.array([[0., -1.], [-1., 0.]])
-        R2 = np.array([[0., 1.], [-1., 0.]])
+        # Note: R is a reflection (det=-1), not a valid rotation, so no debug TF is published.
+        R2 = np.array([[0., -1.], [-1., 0.]])
         T2 = np.array([5.0, 5.0])
 
-        sim_xy = np.array([float(discrete_x), float(discrete_y)])
+        sim_xy = np.array([float(sim_x), float(sim_y)])
         vicon_xy = R2 @ sim_xy + T2
         p_vicon_pos = np.array([vicon_xy[0], vicon_xy[1], 0.0])
 
-        p_sim_yaw = (np.pi / 4.0) * discrete_heading
+        p_sim_yaw = (np.pi / 4.0) * sim_heading
         p_vicon_heading = -np.pi / 2.0 - p_sim_yaw
-
-        # Publish debug TF with updated transform
-        R3 = np.array([[0., 1., 0.], [-1., 0., 0.], [0., 0., 1.]])
-        t3 = np.array([T2[0], T2[1], 0.0])
-        self.publish_sim_to_vicon_tf(t3, R3)
 
         if self.DEBUG_INIT_POSE:
             self.get_logger().info(f"[DEBUG INIT POSE]: Converted pose (vicon frame) = {p_vicon_pos}")
