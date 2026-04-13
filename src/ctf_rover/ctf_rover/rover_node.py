@@ -23,7 +23,8 @@ _T_VICON = np.array([5.0, 5.0])  # Vicon position of sim origin [0, 0]
 
 class RoverNode(Node):
     def __init__(self, **kwargs):
-        super().__init__("ctf")
+        # super().__init__("ctf")
+        super().__init__("rover_node")
         self.ctf_player_config = kwargs.get('ctf_player_config', '2v2')
         self.goal_height = -0.01
 
