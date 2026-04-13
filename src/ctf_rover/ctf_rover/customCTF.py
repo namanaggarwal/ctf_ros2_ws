@@ -877,7 +877,7 @@ class GraphCTF(ParallelEnv):
             edge_ft_vec = np.array(node_pos_dict[v]) - np.array(node_pos_dict[u])
             edge_ft_dir = edge_ft_vec / np.linalg.norm(edge_ft_vec)
             edge_ft_len = np.linalg.norm(edge_ft_vec)
-            edge_ft_uv = np.concat([edge_ft_dir, [edge_ft_len]])
+            edge_ft_uv = np.concatenate([edge_ft_dir, [edge_ft_len]])
             edge_features.append(edge_ft_uv)
         edge_features = np.array(edge_features, dtype=np.float32)
         return edge_features
@@ -1490,7 +1490,7 @@ class GraphCTF(ParallelEnv):
 
             feat_rel_node_pos_to_agent = np.array(node_pos_dict[node]) - np.array(node_pos_dict[agent_state]) # Not rotation invariant (if the map rotates).
             feat_rel_node_pos_to_home_flag = np.array(node_pos_dict[node]) - home_flag_pos
-            feature = np.concat([[feat_agent, feat_flag], feat_rel_node_pos_to_agent, feat_rel_node_pos_to_home_flag, [feat_visibility_bit]])
+            feature = np.concatenate([[feat_agent, feat_flag], feat_rel_node_pos_to_agent, feat_rel_node_pos_to_home_flag, [feat_visibility_bit]])
             node_feature_matrix[node_idx] = feature
 
         node_feature_matrix = np.array(node_feature_matrix, dtype=np.float32) # shape = (num_nodes, F)
