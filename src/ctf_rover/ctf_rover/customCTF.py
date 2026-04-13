@@ -7810,7 +7810,10 @@ def check_valid_Policy(Policy):
         assert abs(np.sum(Policy["policy"]["weights"]) - 1.) <= 1e-8 #np.sum(Policy["policy"]["weights"]) == 1.
     return
 
-from train import *
+try:
+    from train import *
+except ImportError:
+    pass  # train and its deps are training-only; not needed for inference on the rover
 def BestResponse_v2(env_constructor, env_seed, env_args, env_kwargs, num_vec_envs, Policy, device=None, num_million=2, load_path=None, model_save_path=None, br_seed=None, eval_env_bool=True, hyperparams={}, **kwargs):
     """
     Policy basic implementation is to serve as a placeholder for a single policy for an agent. Here, "str" is the agent / team ID for the CustomCTF_v0 / MixedCompCoop environment.
