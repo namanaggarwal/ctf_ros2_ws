@@ -99,6 +99,9 @@ class RoverNode(Node):
         self._waiting_to_depart = False
         # False until the rover arrives at its spawn node and the 5s countdown completes.
         self._game_started = False
+        # One-shot timer used when the new goal is already within arrival_tolerance of the
+        # rover's current position (deadlock prevention — rover would never "depart").
+        self._restep_timer = None
 
         self.get_logger().info("RoverNode initialised, waiting for INIT from server.")
 
@@ -406,6 +409,16 @@ class RoverNode(Node):
         self.policy_step()
         self._waiting_to_depart = True  # rover must physically depart before next policy_step
 
+    def _on_restep_timer(self):
+        """Fired when the new goal was already within arrival_tolerance at publish time.
+        Clears the departure gate and runs the next policy step."""
+        self._restep_timer.cancel()
+        self._restep_timer = None
+        self._waiting_to_depart = False
+        self.get_logger().info("[POLICY] Re-step timer fired (goal was already within tolerance).")
+        self.policy_step()
+        self._waiting_to_depart = True
+
     def policy_step(self):
         if not self.policy_ready:
             self.get_logger().warn("policy_step called but policy not ready.")
@@ -470,6 +483,29 @@ class RoverNode(Node):
             f"[POLICY] action={action} → node_idx={next_node_idx} "
             f"sim={sim_xy} vicon={vicon_xy} local=[{local_pt[0]:.3f}, {local_pt[1]:.3f}]"
         )
+
+        # Deadlock prevention: if the rover is already within arrival_tolerance of the new
+        # goal (e.g. stay action, same node, or a very close neighbour), it will never
+        # physically "depart" and _waiting_to_depart would block all future policy steps.
+        # Schedule a re-step after 1 s so the policy can be queried again.
+        my_pose = self.all_rover_poses.get(self.rover_name)
+        if my_pose is not None:
+            dist_to_new_goal = np.linalg.norm(my_pose[:2] - vicon_xy)
+            if dist_to_new_goal < self.arrival_tolerance:
+                if action == self.env.max_degree:
+                    reason = "stay action"
+                elif next_node_idx == current_node_idx:
+                    reason = "same node as current"
+                else:
+                    reason = "neighbour too close"
+                self.get_logger().warn(
+                    f"[POLICY] Deadlock prevented: goal node {next_node_idx} is "
+                    f"{dist_to_new_goal:.3f}m away (tolerance={self.arrival_tolerance}m), "
+                    f"reason={reason}, action={action} — re-step in 1.0s."
+                )
+                if self._restep_timer is not None:
+                    self._restep_timer.cancel()
+                self._restep_timer = self.create_timer(1.0, self._on_restep_timer)
 
 
 def main(args=None):
