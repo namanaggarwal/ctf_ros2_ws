@@ -23,7 +23,8 @@ setup(
     license='TODO: License declaration',
     entry_points={
         'console_scripts': [
-            'game_server = ctf_game_server.game_server:main'
+            'game_server = ctf_game_server.game_server:main',
+            'publish_dummy_graph = ctf_game_server.publish_dummy_graph:main'
         ],
     },
 )
