@@ -3,6 +3,6 @@ game_server:
     grid_size: 8
     goal_height: -0.01
     total_rovers: 4
-    seed: 0
+    seed: 2
     ctf_player_config: "2v2"
     use_dlio: False
