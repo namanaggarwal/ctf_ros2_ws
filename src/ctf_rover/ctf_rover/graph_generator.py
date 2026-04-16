@@ -2,11 +2,10 @@ import numpy as np
 import networkx as nx
 from ctf_rover.customCTF import *
 
-def generate_graph(seed=2, nx_dim=11, ny_dim=11):
+def generate_graph():
     graphctf = GraphCTF(fixed_flag_hypothesis=1)
 
-    bc = graphctf.make_basin_corridor_medium(seed=seed, nx_dim=nx_dim, ny_dim=ny_dim, rho = 0.86,
-                ell = 3.2)
+    bc = graphctf.make_basin_corridor_medium_v1()
 
     G_map = bc.G
 
