@@ -41,7 +41,7 @@ class GameServer(Node):
         self.declare_parameter("seed", 0)
         self.declare_parameter("ctf_player_config", "2v2")
         self.declare_parameter("use_dlio", False)
-        self.declare_parameter("tag_radius", 1.5)
+        self.declare_parameter("tag_radius", 0.55)
         self.declare_parameter("tag_angle_tolerance", 0.785)  # ~45 degrees
         self.declare_parameter("tag_cooldown", 10.0)
 
@@ -99,8 +99,14 @@ class GameServer(Node):
         # Tracks the last time (seconds) each rover was tagged, for cooldown enforcement.
         self._tag_cooldowns = {}
 
-        # Subscribe to rover-reported tag events.
+        # Rovers that have confirmed they are at their spawn position.
+        self._rovers_at_spawn = set()
+        # True only after all rovers confirm spawn and START has been broadcast.
+        self._game_running = False
+
+        # Subscribe to rover-reported tag events and spawn confirmations.
         self.create_subscription(String, "/ctf/tag_event", self.handle_tag_event, 10)
+        self.create_subscription(String, "/ctf/rover_ready", self.handle_rover_ready, 10)
 
         self.marker_pub = self.create_publisher(Marker, 'initial_pose_marker', 10)
 
@@ -613,12 +619,44 @@ class GameServer(Node):
         return
     
     # ------------------------------------------------------------------
+    # Synchronised game start
+    # ------------------------------------------------------------------
+
+    def handle_rover_ready(self, msg: String):
+        """Collect spawn confirmations; broadcast START once all rovers have confirmed."""
+        if not self.game_started:
+            return
+        rover_name = msg.data
+        if rover_name not in self.rovers_list:
+            self.get_logger().warn(f"[GAMESERVER] rover_ready from unknown rover: {rover_name}")
+            return
+        if rover_name in self._rovers_at_spawn:
+            return  # already counted
+        self._rovers_at_spawn.add(rover_name)
+        self.get_logger().info(
+            f"[GAMESERVER] {rover_name} at spawn "
+            f"({len(self._rovers_at_spawn)}/{self.total_rovers})"
+        )
+        if len(self._rovers_at_spawn) == self.total_rovers:
+            self._broadcast_start()
+
+    def _broadcast_start(self):
+        """Send START to every rover — signals that GNN inference may begin."""
+        self._game_running = True
+        self.get_logger().info("[GAMESERVER] All rovers at spawn — broadcasting START.")
+        for rr_name in self.rovers_list:
+            msg = ServerToRoverMessage()
+            msg.command = 'START'
+            self.server_to_rover_publishers[rr_name].publish(msg)
+            self.get_logger().info(f"[GAMESERVER] START → {rr_name}")
+
+    # ------------------------------------------------------------------
     # Physical tag handling
     # ------------------------------------------------------------------
 
     def handle_tag_event(self, msg: String):
         """Validate a rover-reported tag and dispatch RESPAWN if legitimate."""
-        if not self.game_started:
+        if not self._game_running:
             return
 
         try:

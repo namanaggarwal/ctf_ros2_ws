@@ -40,7 +40,7 @@ class RoverNode(Node):
         self.declare_parameter("team", "RED")
         self.declare_parameter("policy_zip_path", "")
         self.declare_parameter("arrival_tolerance", 0.5)
-        self.declare_parameter("tag_radius", 1.5)
+        self.declare_parameter("tag_radius", 0.55)
         self.declare_parameter("tag_angle_tolerance", 0.785)  # ~45 degrees
 
         self.rover_team_name = self.get_parameter("team").value
@@ -79,6 +79,8 @@ class RoverNode(Node):
 
         # Publisher to report tag events to the game server
         self._tag_event_pub = self.create_publisher(String, "/ctf/tag_event", 10)
+        # Publisher to notify server that this rover has reached its spawn position
+        self._rover_ready_pub = self.create_publisher(String, "/ctf/rover_ready", 10)
 
         # TF infrastructure
         self.tf_buffer = tf2_ros.Buffer()
@@ -99,12 +101,15 @@ class RoverNode(Node):
         self.policy_ready = False
         self.current_node_idx = None
         self.goal_node_idx = None
-        self._first_step_timer = None
         # Prevents re-triggering policy_step until the rover physically departs the goal area.
         # Set True after every policy_step(); cleared once dist to goal > arrival_tolerance.
         self._waiting_to_depart = False
-        # False until the rover arrives at its spawn node and the 5s countdown completes.
+        # One-shot: True once the first Blue rover reaches a frontier node.
+        self._flag_ambiguity_resolved = False
+        # False until the server broadcasts START after all rovers confirm spawn arrival.
         self._game_started = False
+        # True once spawn arrival has been reported to the server (prevents duplicate publishes).
+        self._spawn_reached_sent = False
         # One-shot timer used when the new goal is already within arrival_tolerance of the
         # rover's current position (deadlock prevention — rover would never "depart").
         self._restep_timer = None
@@ -270,8 +275,14 @@ class RoverNode(Node):
                 f"[ROVER] Spawn node idx={self.current_node_idx}"
             )
 
-            # Policy step fires once the rover physically arrives at its spawn node
-            # (detected in _world_state_callback) and a 5s countdown completes.
+            # Policy step fires once the server broadcasts START after all rovers confirm spawn.
+
+        elif command == "START":
+            self.get_logger().info("[POLICY] START received — all rovers confirmed at spawn. Beginning GNN inference.")
+            self._game_started = True
+            self._waiting_to_depart = False
+            self.policy_step()
+            self._waiting_to_depart = True
 
     # ------------------------------------------------------------------
     # Policy initialisation (called once on first INIT)
@@ -359,12 +370,15 @@ class RoverNode(Node):
 
         if dist < self.arrival_tolerance:
             if not self._game_started:
-                # First arrival at spawn — start 5s countdown before beginning GNN inference.
-                if self._first_step_timer is None:
+                # Notify the server once — it will broadcast START when all rovers confirm.
+                if not self._spawn_reached_sent:
+                    self._spawn_reached_sent = True
                     self.get_logger().info(
-                        f"[POLICY] Spawn reached (dist={dist:.3f}m). Game starts in 5s."
+                        f"[POLICY] Spawn reached (dist={dist:.3f}m). Notifying server."
                     )
-                    self._first_step_timer = self.create_timer(5.0, self._first_policy_step_once)
+                    ready_msg = String()
+                    ready_msg.data = self.rover_name
+                    self._rover_ready_pub.publish(ready_msg)
             else:
                 self.get_logger().info(
                     f"[POLICY] Goal reached (dist={dist:.3f}m). Stepping policy."
@@ -426,26 +440,20 @@ class RoverNode(Node):
                 node_idx = self._nearest_node_idx(sim_xy)
                 node = self.env.idx_to_node[node_idx]
                 if self.env.is_frontier[node]:
-                    self.get_logger().info(
-                        f"[FLAG] {rr_name} in frontier zone — Blue flag discovered."
-                    )
                     for cn in self.env.enemy_flag_known:
                         if cn.startswith("Blue"):
                             self.env.enemy_flag_known[cn] = True
+                    if not self._flag_ambiguity_resolved:
+                        self._flag_ambiguity_resolved = True
+                        self.get_logger().warn(
+                            f"[FLAG RESOLVED] {rr_name} ({self.rr_to_ctf[rr_name]}) reached "
+                            f"frontier node {node} — Red flag hypothesis confirmed for all Blue agents."
+                        )
                     break
 
     # ------------------------------------------------------------------
     # Policy step
     # ------------------------------------------------------------------
-
-    def _first_policy_step_once(self):
-        self._game_started = True
-        self._first_step_timer.cancel()
-        self._first_step_timer = None
-        self._waiting_to_depart = False
-        self.get_logger().info("[POLICY] 5s elapsed — game starting, running first policy step.")
-        self.policy_step()
-        self._waiting_to_depart = True  # rover must physically depart before next policy_step
 
     def _on_restep_timer(self):
         """Fired when the new goal was already within arrival_tolerance at publish time.
