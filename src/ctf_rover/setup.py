@@ -17,8 +17,8 @@ setup(
             'config/params_red_1.yaml',
         ]),
         ('share/' + package_name + '/policies', [
-            'policies/blue_mappo_final.zip',
-            'policies/iter3_red_br.zip',
+            'policies/iter1_blue_br_minmaxregret_best.zip',
+            'policies/GNN_PPO_RedBR_opp_fh1_flag_uniform.zip',
         ]),
     ],
     install_requires=['setuptools'],
