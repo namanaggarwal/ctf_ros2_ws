@@ -18,6 +18,7 @@ from geometry_msgs.msg import Point
 
 import copy
 import numpy as np
+from std_msgs.msg import String
 
 from ctf_msgs.srv import JoinGame
 
@@ -40,6 +41,9 @@ class GameServer(Node):
         self.declare_parameter("seed", 0)
         self.declare_parameter("ctf_player_config", "2v2")
         self.declare_parameter("use_dlio", False)
+        self.declare_parameter("tag_radius", 1.5)
+        self.declare_parameter("tag_angle_tolerance", 0.785)  # ~45 degrees
+        self.declare_parameter("tag_cooldown", 10.0)
 
         self.goal_height = self.get_parameter("goal_height").value
         self.total_rovers = self.get_parameter("total_rovers").value
@@ -91,6 +95,12 @@ class GameServer(Node):
 
         # debug iniital pose flag, tests code with just one rover
         self.DEBUG_INIT_POSE = False
+
+        # Tracks the last time (seconds) each rover was tagged, for cooldown enforcement.
+        self._tag_cooldowns = {}
+
+        # Subscribe to rover-reported tag events.
+        self.create_subscription(String, "/ctf/tag_event", self.handle_tag_event, 10)
 
         self.marker_pub = self.create_publisher(Marker, 'initial_pose_marker', 10)
 
@@ -602,6 +612,119 @@ class GameServer(Node):
         self.get_logger().debug(f"[GAMESERVER] Latest pose for {name} at sec={now.sec} nsec={now.nanosec}: {pose}")
         return
     
+    # ------------------------------------------------------------------
+    # Physical tag handling
+    # ------------------------------------------------------------------
+
+    def handle_tag_event(self, msg: String):
+        """Validate a rover-reported tag and dispatch RESPAWN if legitimate."""
+        if not self.game_started:
+            return
+
+        try:
+            tagger_rr, tagged_rr = msg.data.split(':')
+        except ValueError:
+            self.get_logger().warn(f"[TAG] Malformed tag event: '{msg.data}'")
+            return
+
+        if tagger_rr not in self.rovers_info or tagged_rr not in self.rovers_info:
+            self.get_logger().warn(f"[TAG] Unknown rover in event: {tagger_rr} → {tagged_rr}")
+            return
+
+        # Cooldown check
+        now_sec = self.get_clock().now().nanoseconds / 1e9
+        cooldown = self.get_parameter("tag_cooldown").value
+        last_tagged = self._tag_cooldowns.get(tagged_rr, 0.0)
+        if now_sec - last_tagged < cooldown:
+            self.get_logger().info(
+                f"[TAG] {tagger_rr} → {tagged_rr} ignored: cooldown "
+                f"({now_sec - last_tagged:.1f}s < {cooldown}s)"
+            )
+            return
+
+        # Need poses for both rovers
+        tagger_poses = self.rovers_state[tagger_rr]['pose']
+        tagged_poses = self.rovers_state[tagged_rr]['pose']
+        if not tagger_poses or not tagged_poses:
+            self.get_logger().warn("[TAG] Missing Vicon poses for validation.")
+            return
+
+        tagger_p = tagger_poses[-1].position
+        tagged_p = tagged_poses[-1].position
+
+        # Distance check
+        dist = np.linalg.norm([tagger_p.x - tagged_p.x, tagger_p.y - tagged_p.y])
+        tag_radius = self.get_parameter("tag_radius").value
+        if dist > tag_radius:
+            self.get_logger().info(
+                f"[TAG] {tagger_rr} → {tagged_rr} invalid: dist={dist:.3f}m > radius={tag_radius}m"
+            )
+            return
+
+        # Heading check: tagger must be facing tagged rover
+        tagger_q = tagger_poses[-1].orientation
+        tagger_yaw = R_scipy.from_quat(
+            [tagger_q.x, tagger_q.y, tagger_q.z, tagger_q.w]
+        ).as_euler('xyz')[2]
+        bearing = np.arctan2(tagged_p.y - tagger_p.y, tagged_p.x - tagger_p.x)
+        angle_diff = abs(((tagger_yaw - bearing) + np.pi) % (2 * np.pi) - np.pi)
+        tag_angle = self.get_parameter("tag_angle_tolerance").value
+        if angle_diff > tag_angle:
+            self.get_logger().info(
+                f"[TAG] {tagger_rr} → {tagged_rr} invalid: heading off by "
+                f"{np.degrees(angle_diff):.1f}° (tolerance={np.degrees(tag_angle):.1f}°)"
+            )
+            return
+
+        self.get_logger().info(
+            f"[TAG] Valid: {tagger_rr} tagged {tagged_rr} "
+            f"(dist={dist:.3f}m, heading_diff={np.degrees(angle_diff):.1f}°)"
+        )
+        self._tag_cooldowns[tagged_rr] = now_sec
+        self._send_respawn(tagged_rr)
+
+    def _sample_respawn_sim(self, team: str):
+        """Sample a random (x, y) in sim coordinates from the team's respawn zone."""
+        if team.upper().startswith('R'):
+            area = self.ctf_env.red_tag_spawn_area
+        else:
+            area = self.ctf_env.blue_tag_spawn_area
+        x = np.random.uniform(area['x_lim'][0], area['x_lim'][1])
+        y = np.random.uniform(area['y_lim'][0], area['y_lim'][1])
+        return float(x), float(y)
+
+    def _send_respawn(self, tagged_rr_name: str):
+        """Send a RESPAWN command to the tagged rover with a sampled respawn position."""
+        team = self.rovers_info[tagged_rr_name]['team']  # 'RED' or 'BLUE'
+        sim_x, sim_y = self._sample_respawn_sim(team)
+        sim_heading = 6 if team.upper().startswith('R') else 2
+        p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(sim_x, sim_y, sim_heading)
+
+        vel_vicon_xy = np.array([np.cos(p_vicon_heading), np.sin(p_vicon_heading)])
+
+        goal_msg = State()
+        goal_msg.pos.x = p_vicon_pos[0]
+        goal_msg.pos.y = p_vicon_pos[1]
+        goal_msg.pos.z = self.goal_height
+        eps_vel = 0.001
+        goal_msg.vel.x = eps_vel * vel_vicon_xy[0]
+        goal_msg.vel.y = eps_vel * vel_vicon_xy[1]
+        goal_msg.vel.z = 0.0
+        goal_msg.quat.x = 0.0
+        goal_msg.quat.y = 0.0
+        goal_msg.quat.z = 0.0
+        goal_msg.quat.w = 1.0
+
+        msg = ServerToRoverMessage()
+        msg.command = 'RESPAWN'
+        msg.commanded_goal = goal_msg
+
+        self.server_to_rover_publishers[tagged_rr_name].publish(msg)
+        self.get_logger().info(
+            f"[GAMESERVER] RESPAWN sent to {tagged_rr_name} (team={team}) "
+            f"→ vicon=[{p_vicon_pos[0]:.3f}, {p_vicon_pos[1]:.3f}]"
+        )
+
     # use dlio for poses instead of vicon
     # convert dlio pose to the vicon (global) frame and save it for each rover
     def dlio_callback(self, msg, name):

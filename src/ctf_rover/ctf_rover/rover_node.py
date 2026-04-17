@@ -10,6 +10,7 @@ from dynus_interfaces.msg import State
 from scipy.spatial.transform import Rotation as R
 
 from ctf_msgs.msg import ServerToRoverMessage
+from std_msgs.msg import String
 import tf2_ros
 from tf2_ros import TransformException
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
@@ -39,6 +40,8 @@ class RoverNode(Node):
         self.declare_parameter("team", "RED")
         self.declare_parameter("policy_zip_path", "")
         self.declare_parameter("arrival_tolerance", 0.5)
+        self.declare_parameter("tag_radius", 1.5)
+        self.declare_parameter("tag_angle_tolerance", 0.785)  # ~45 degrees
 
         self.rover_team_name = self.get_parameter("team").value
         self.arrival_tolerance = self.get_parameter("arrival_tolerance").value
@@ -73,6 +76,9 @@ class RoverNode(Node):
             f"/{self.rover_name}/term_goal",
             10,
         )
+
+        # Publisher to report tag events to the game server
+        self._tag_event_pub = self.create_publisher(String, "/ctf/tag_event", 10)
 
         # TF infrastructure
         self.tf_buffer = tf2_ros.Buffer()
@@ -226,6 +232,36 @@ class RoverNode(Node):
             if self.env is None:
                 self._init_policy()
 
+        elif command == "RESPAWN":
+            goal = msg.commanded_goal
+            p = goal.pos
+            self.get_logger().info(f"[ROVER] RESPAWN command received → [{p.x:.3f}, {p.y:.3f}]")
+
+            if self.X_map_world is None:
+                self.get_logger().warn("[ROVER] RESPAWN received but TF not ready, ignoring.")
+                return
+
+            global_point = np.array([p.x, p.y, p.z, 1.0])
+            local_point = self.X_map_world @ global_point
+
+            local_goal = PoseStamped()
+            local_goal.header.stamp = self.get_clock().now().to_msg()
+            local_goal.header.frame_id = self.local_frame
+            local_goal.pose.position.x = local_point[0]
+            local_goal.pose.position.y = local_point[1]
+            local_goal.pose.position.z = self.goal_height
+            local_goal.pose.orientation.w = 1.0
+            self.publisher_local_dynus_command_goal.publish(local_goal)
+
+            # Update goal so arrival detection fires at the respawn node.
+            spawn_sim = self._vicon_to_sim(np.array([p.x, p.y]))
+            self.goal_node_idx = self._nearest_node_idx(spawn_sim)
+            self._waiting_to_depart = False
+            self.get_logger().info(
+                f"[ROVER] Navigating to respawn node idx={self.goal_node_idx} "
+                f"local=[{local_point[0]:.3f}, {local_point[1]:.3f}]"
+            )
+
             # Snap spawn Vicon pose to nearest graph node
             spawn_sim = self._vicon_to_sim(np.array([p.x, p.y]))
             self.current_node_idx = self._nearest_node_idx(spawn_sim)
@@ -300,7 +336,9 @@ class RoverNode(Node):
 
     def _world_state_callback(self, msg: PoseStamped, rover_name: str):
         p = msg.pose.position
-        self.all_rover_poses[rover_name] = np.array([p.x, p.y, p.z])
+        q = msg.pose.orientation
+        # Store [x, y, z, qx, qy, qz, qw] — orientation needed for heading-based tag check.
+        self.all_rover_poses[rover_name] = np.array([p.x, p.y, p.z, q.x, q.y, q.z, q.w])
 
         # Check goal-reached only for this rover's own pose update
         if rover_name != self.rover_name or not self.policy_ready:
@@ -419,6 +457,61 @@ class RoverNode(Node):
         self.policy_step()
         self._waiting_to_depart = True
 
+    # ------------------------------------------------------------------
+    # Physical tag check
+    # ------------------------------------------------------------------
+
+    def _check_and_publish_tag(self):
+        """Validate proximity + heading and notify the game server to execute a respawn."""
+        my_pose = self.all_rover_poses.get(self.rover_name)
+        if my_pose is None or len(my_pose) < 7:
+            return
+
+        my_xy = my_pose[:2]
+        my_yaw = R.from_quat(my_pose[3:7]).as_euler('xyz')[2]
+
+        tag_radius = self.get_parameter("tag_radius").value
+        tag_angle = self.get_parameter("tag_angle_tolerance").value
+
+        best_dist, best_rr, best_xy = float('inf'), None, None
+        for rr_name, ctf_name in self.rr_to_ctf.items():
+            if rr_name == self.rover_name:
+                continue
+            if ctf_name[0] == self.ctf_agent_name[0]:  # same team
+                continue
+            opp_pose = self.all_rover_poses.get(rr_name)
+            if opp_pose is None:
+                continue
+            dist = np.linalg.norm(opp_pose[:2] - my_xy)
+            if dist < best_dist:
+                best_dist, best_rr, best_xy = dist, rr_name, opp_pose[:2]
+
+        if best_rr is None:
+            return
+
+        if best_dist > tag_radius:
+            self.get_logger().info(
+                f"[TAG] {best_rr} out of range ({best_dist:.3f}m > {tag_radius}m)."
+            )
+            return
+
+        bearing = np.arctan2(best_xy[1] - my_xy[1], best_xy[0] - my_xy[0])
+        angle_diff = abs(((my_yaw - bearing) + np.pi) % (2 * np.pi) - np.pi)
+        if angle_diff > tag_angle:
+            self.get_logger().info(
+                f"[TAG] {best_rr} in range but heading off by {np.degrees(angle_diff):.1f}° "
+                f"(tolerance={np.degrees(tag_angle):.1f}°)."
+            )
+            return
+
+        self.get_logger().info(
+            f"[TAG] Valid: {best_rr} at {best_dist:.3f}m, heading diff={np.degrees(angle_diff):.1f}°. "
+            f"Notifying server."
+        )
+        tag_msg = String()
+        tag_msg.data = f"{self.rover_name}:{best_rr}"
+        self._tag_event_pub.publish(tag_msg)
+
     def policy_step(self):
         if not self.policy_ready:
             self.get_logger().warn("policy_step called but policy not ready.")
@@ -456,8 +549,9 @@ class RoverNode(Node):
             # Stay — republish current node
             next_node_idx = current_node_idx
         else:
-            # Tag — do nothing physically
-            self.get_logger().info("[POLICY] Tag action — holding position.")
+            # Tag action — check physical proximity + heading, then notify game server.
+            self.get_logger().info("[POLICY] Tag action — checking proximity and heading.")
+            self._check_and_publish_tag()
             return
 
         self.current_node_idx = current_node_idx

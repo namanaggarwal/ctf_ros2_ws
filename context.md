@@ -158,6 +158,11 @@ Standalone version of the coordinate transform logic in `RoverNode`. Subscribes 
 
 ## Changelog
 
+### 2026-04-17
+- **Physical tagging layer (`game_server.py`, `rover_node.py`)**: Implemented end-to-end physical tagging. When the rover policy outputs a tag action, `_check_and_publish_tag()` validates two conditions using live Vicon data: (1) the closest enemy rover is within `tag_radius` (default 1.5 m), and (2) the tagger's yaw is within `tag_angle_tolerance` (default 45°) of the bearing to that rover. If both pass, the rover publishes `"tagger_rr:tagged_rr"` to `/ctf/tag_event`. The game server re-validates both conditions against its own authoritative Vicon poses, enforces a per-rover `tag_cooldown` (default 10 s), then calls `_send_respawn()` which samples a random point from the tagged team's spawn zone (sim coords → Vicon), builds a `ServerToRoverMessage{command='RESPAWN'}`, and dispatches it. The rover handles `RESPAWN` in `server_to_rover_callback` by converting the Vicon goal to local map frame, publishing to `term_goal`, updating `goal_node_idx`, and clearing `_waiting_to_depart` so normal policy resumes on arrival. `all_rover_poses` extended from 3-element `[x,y,z]` to 7-element `[x,y,z,qx,qy,qz,qw]` to carry orientation; all existing `[:2]`/`[:3]` slices remain valid. New ROS parameters: `tag_radius`, `tag_angle_tolerance`, `tag_cooldown`.
+
+
+
 ### 2026-04-13 (updated 2026-04-14)
 - **Coordinate transform update (`rover_node.py`, `game_server.py`)**: Axes redefined as `x_sim = -y_vicon, y_sim = +x_vicon` (proper 90° CW rotation, det=+1). `_R_SIM_VICON` split into `_R_SIM_TO_VICON = [[0,1],[-1,0]]` and `_R_VICON_TO_SIM = [[0,-1],[1,0]]`. `sim_frame_to_vicon_frame` heading formula corrected to `θ_vicon = θ_sim − π/2`. Blue/Red spawn headings explicitly set. Debug TF now uses valid rotation.
 - **GraphCTF spawn (`game_server.py`)**: `compute_initial_poses()` replaced with GraphCTF-based logic — calls `ctf_env.reset()`, reads `node_pose_dict` for sim [x,y] per agent. Old 8×8 grid `reset()` removed. `customCTF.py` copied into game_server package.
