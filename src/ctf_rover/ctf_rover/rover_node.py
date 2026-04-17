@@ -237,6 +237,13 @@ class RoverNode(Node):
             if self.env is None:
                 self._init_policy()
 
+            # Snap spawn Vicon pose to nearest graph node so _world_state_callback
+            # can detect arrival and send rover_ready to the server.
+            spawn_sim = self._vicon_to_sim(np.array([p.x, p.y]))
+            self.current_node_idx = self._nearest_node_idx(spawn_sim)
+            self.goal_node_idx = self.current_node_idx
+            self.get_logger().info(f"[ROVER] Spawn node idx={self.current_node_idx}")
+
         elif command == "RESPAWN":
             goal = msg.commanded_goal
             p = goal.pos
@@ -266,16 +273,6 @@ class RoverNode(Node):
                 f"[ROVER] Navigating to respawn node idx={self.goal_node_idx} "
                 f"local=[{local_point[0]:.3f}, {local_point[1]:.3f}]"
             )
-
-            # Snap spawn Vicon pose to nearest graph node
-            spawn_sim = self._vicon_to_sim(np.array([p.x, p.y]))
-            self.current_node_idx = self._nearest_node_idx(spawn_sim)
-            self.goal_node_idx = self.current_node_idx
-            self.get_logger().info(
-                f"[ROVER] Spawn node idx={self.current_node_idx}"
-            )
-
-            # Policy step fires once the server broadcasts START after all rovers confirm spawn.
 
         elif command == "START":
             self.get_logger().info("[POLICY] START received — all rovers confirmed at spawn. Beginning GNN inference.")
