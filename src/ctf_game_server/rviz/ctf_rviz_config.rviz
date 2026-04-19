@@ -11,6 +11,8 @@ Panels:
         - /RR04 Odom1/Shape1
         - /RR06 Odom1/Shape1
         - /RR08 Odom1/Shape1
+        - /Marker2
+        - /Marker3
       Splitter Ratio: 0.5
     Tree Height: 674
   - Class: rviz_common/Selection
@@ -302,7 +304,7 @@ Visualization Manager:
       Enabled: true
       Name: RR03 Traj
       Namespaces:
-        state_vec: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -314,7 +316,7 @@ Visualization Manager:
       Enabled: true
       Name: RR04 Traj
       Namespaces:
-        state_vec: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -338,7 +340,7 @@ Visualization Manager:
       Enabled: true
       Name: RR06 Traj
       Namespaces:
-        state_vec: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -350,7 +352,7 @@ Visualization Manager:
       Enabled: true
       Name: RR08 Traj
       Namespaces:
-        state_vec: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -757,8 +759,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        ctf_flag: true
-        ctf_graph_nodes: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -766,6 +767,33 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /ctf_graph
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Marker
+      Namespaces:
+        obs_edges: true
+        obs_nodes: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /obs_graph
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Marker
+      Namespaces:
+        boxes: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /box_edges
       Value: true
   Enabled: true
   Global Options:
@@ -813,25 +841,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 15.397876739501953
+      Distance: 13.476923942565918
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.05692194029688835
-        Y: -0.14562185108661652
-        Z: -0.2507879137992859
+        X: -0.38865819573402405
+        Y: -0.15330767631530762
+        Z: -0.146103173494339
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.424796462059021
+      Pitch: 1.5297963619232178
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 4.688518047332764
+      Yaw: 4.693507671356201
     Saved: ~
 Window Geometry:
   Displays:
@@ -849,5 +877,5 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 959
-  X: 1526
-  Y: 742
+  X: 1939
+  Y: 863

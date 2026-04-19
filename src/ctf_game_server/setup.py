@@ -24,7 +24,9 @@ setup(
     entry_points={
         'console_scripts': [
             'game_server = ctf_game_server.game_server:main',
-            'publish_dummy_graph = ctf_game_server.publish_dummy_graph:main'
+            'publish_dummy_graph = ctf_game_server.publish_dummy_graph:main',
+            'publish_obs = ctf_game_server.publish_obs:main',
+            'publish_boxes = ctf_game_server.publish_boxes:main'
         ],
     },
 )
