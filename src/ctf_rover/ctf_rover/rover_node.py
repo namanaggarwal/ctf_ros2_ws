@@ -535,7 +535,7 @@ class RoverNode(Node):
         if not self.policy_ready:
             self.get_logger().warn("policy_step called but policy not ready.")
             return
-        if self.X_map_world is None:
+        if not self.use_mocap and self.X_map_world is None:
             self.get_logger().warn("policy_step called but TF not ready.")
             return
 
