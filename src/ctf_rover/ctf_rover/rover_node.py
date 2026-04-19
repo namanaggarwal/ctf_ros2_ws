@@ -77,6 +77,8 @@ class RoverNode(Node):
             10,
         )
 
+        self.use_mocap = True
+
         # Publisher to report tag events to the game server
         self._tag_event_pub = self.create_publisher(String, "/ctf/tag_event", 10)
         # Publisher to notify server that this rover has reached its spawn position
@@ -86,11 +88,14 @@ class RoverNode(Node):
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         self.world_map_broadcaster = StaticTransformBroadcaster(self)
+        
         self.X_map_world = None
         self.global_frame = "world"
         self.initial_frame = self.rover_name
         self.local_frame = f"{self.rover_name}/map"
-        self.init_timer = self.create_timer(0.2, self.initialize_tf)
+
+        if not self.use_mocap:
+            self.init_timer = self.create_timer(0.2, self.initialize_tf)
 
         # World-state: populated once the server's INIT roster arrives
         self.all_rover_poses = {}
@@ -207,7 +212,8 @@ class RoverNode(Node):
                     f"ctf_agent={self.ctf_agent_name} team_index={self.team_index}"
                 )
 
-            self.initialize_tf()
+            if not self.use_mocap:
+                self.initialize_tf()
 
             goal = msg.commanded_goal
             p = goal.pos
@@ -216,10 +222,14 @@ class RoverNode(Node):
             )
 
             global_point = np.array([p.x, p.y, p.z, 1.0])
-            local_point = self.X_map_world @ global_point
 
-            v = goal.vel
-            local_vel = self.X_map_world[:3, :3] @ np.array([v.x, v.y, v.z])
+            if not self.use_mocap:
+                local_point = self.X_map_world @ global_point
+
+                v = goal.vel
+                local_vel = self.X_map_world[:3, :3] @ np.array([v.x, v.y, v.z])
+            else:
+                local_point = global_point
 
             local_goal = PoseStamped()
             local_goal.header.stamp = goal.header.stamp
@@ -254,7 +264,11 @@ class RoverNode(Node):
                 return
 
             global_point = np.array([p.x, p.y, p.z, 1.0])
-            local_point = self.X_map_world @ global_point
+
+            if not self.use_mocap:
+                local_point = self.X_map_world @ global_point
+            else:
+                local_point = global_point
 
             local_goal = PoseStamped()
             local_goal.header.stamp = self.get_clock().now().to_msg()
@@ -567,8 +581,12 @@ class RoverNode(Node):
         sim_xy = np.array(self.env.node_pose_dict[next_node])
         vicon_xy = self._sim_to_vicon(sim_xy)
         vicon_pt = np.array([vicon_xy[0], vicon_xy[1], self.goal_height, 1.0])
-        local_pt = self.X_map_world @ vicon_pt
 
+        if not self.use_mocap:
+            local_pt = self.X_map_world @ vicon_pt
+        else:
+            local_pt = vicon_pt
+            
         goal_msg = PoseStamped()
         goal_msg.header.stamp = self.get_clock().now().to_msg()
         goal_msg.header.frame_id = self.local_frame
