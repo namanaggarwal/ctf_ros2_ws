@@ -345,6 +345,8 @@ class GraphCTF(ParallelEnv):
         Description: self.game_mode = 'half' is no blue flag. 'full' is blue flag.
         """
 
+        self.highbay_experiment = kwargs.get('highbay_experiment', True)
+
         # Opponent policy integration (avoids GraphCoopEnv wrapper overhead)
         # Note: actual initialization is deferred until after agents are defined
         self._opp_policy = opp_policy
@@ -574,10 +576,15 @@ class GraphCTF(ParallelEnv):
             
             
         elif random_graph_family == 'basin-cooridoor':
-            bc = self.make_basin_corridor_medium_v1()
-            G = bc.G
-            self._bc = bc  # preserve basin-corridor metadata for gen_graph_artifacts
-            #self._bc_info = build_bc_info(self._bc) # train_blue_curicullum.py has build_bc_info() which uses Structs from basin_corridor_policies.py
+            if self.highbay_experiment:
+                bc = self.make_highbay_map()
+                G = bc.G
+                self._bc = bc 
+            else:
+                bc = self.make_basin_corridor_medium_v1()
+                G = bc.G
+                self._bc = bc  # preserve basin-corridor metadata for gen_graph_artifacts
+                #self._bc_info = build_bc_info(self._bc) # train_blue_curicullum.py has build_bc_info() which uses Structs from basin_corridor_policies.py
 
         for i, node in enumerate(G.nodes):
             G.nodes[node]['node_idx'] = i # Storing node_idx as a feature...
@@ -867,6 +874,131 @@ class GraphCTF(ParallelEnv):
             bottom_region=bottom_region,
         )
 
+    def make_highbay_map(
+        self,
+        seed: int = 222435,
+        nx_dim: int = 6,
+        ny_dim: int = 6,
+        rho: float = 0.80,
+        ell: float = 3.2,
+        jitter: float = 0.35,
+        choke_row_start: int = 2, # rows [start, end] form the wall
+        choke_row_end: int = 3, 
+        passage_cols: set = {0, 1, 2, 6-3, 6-2, 6-1}, # columns kept open through the choke
+        funnel_rows: int = 2, # rows above/below choke forced open on passage cols
+    ) -> BasinCorridorGraph:
+
+        rng = np.random.default_rng(seed)
+        N   = nx_dim * ny_dim
+        
+        # ── Positions ─────────────────────────────────────────────────────────────────
+        pos = {}
+        for i in range(nx_dim):
+            for j in range(ny_dim):
+                u = i * ny_dim + j
+                pos[u] = np.array([j + jitter * rng.normal(),
+                                    -i + jitter * rng.normal()], dtype=float)
+
+        # ── 4-connected grid edges ────────────────────────────────────────────────────
+        edges = []
+        for i in range(nx_dim):
+            for j in range(ny_dim):
+                u = i * ny_dim + j
+                if i + 1 < nx_dim:
+                    edges.append((u, (i + 1) * ny_dim + j))
+                if j + 1 < ny_dim:
+                    edges.append((u, i * ny_dim + (j + 1)))
+
+        # ── Correlated random field ───────────────────────────────────────────────────
+        coords = np.array([[i, j] for i in range(nx_dim) for j in range(ny_dim)], dtype=float)
+        D      = np.linalg.norm(coords[:, None] - coords[None], axis=2)
+        Sigma  = np.exp(-D / ell) + 1e-6 * np.eye(N)
+        L      = np.linalg.cholesky(Sigma)
+        z      = L @ rng.standard_normal(N)
+        tau    = np.quantile(z, 1 - rho)
+        open_nodes = {u for u in range(N) if z[u] >= tau}
+
+        # ── Choke mask ────────────────────────────────────────────────────────────────
+        # Force close the wall; force open passage cols inside choke
+        for i in range(choke_row_start, choke_row_end + 1):
+            for j in range(ny_dim):
+                u = i * ny_dim + j
+                if j not in passage_cols:
+                    open_nodes.discard(u)
+                else:
+                    open_nodes.add(u)
+
+        # Funnel: force passage cols open for `funnel_rows` rows above and below the choke
+        # so passages are guaranteed to reach into both regions regardless of CRF
+        for i in range(max(0, choke_row_start - funnel_rows), choke_row_start):
+            for j in passage_cols:
+                open_nodes.add(i * ny_dim + j)
+        for i in range(choke_row_end + 1, min(nx_dim, choke_row_end + 1 + funnel_rows)):
+            for j in passage_cols:
+                open_nodes.add(i * ny_dim + j)
+
+        # ── Build graph + largest CC ──────────────────────────────────────────────────
+        G = nx.Graph()
+        for u in open_nodes:
+            G.add_node(u, pos=pos[u])
+        for u, v in edges:
+            if u in open_nodes and v in open_nodes:
+                G.add_edge(u, v)
+
+        largest_cc = max(nx.connected_components(G), key=len)
+        G = G.subgraph(largest_cc).copy()
+
+        prune_node_list = [3, 5, 15, 31, 32]
+        post_prune_node_dict = {3:4, 5:11, 15:21, 31:30, 32:33}
+
+        for node in prune_node_list:
+            post_prune_node = post_prune_node_dict[node]
+            prune_node_neighbors = list(G.neighbors(node))
+            G.remove_node(node)
+            for neighbor in prune_node_neighbors:
+                if neighbor != post_prune_node: G.add_edge(post_prune_node, neighbor)
+
+        # Passage nodes...
+        passage_nodes = [u for u in G.nodes()
+                 if choke_row_start <= (u // ny_dim) <= choke_row_end]
+        
+        # Flag hypothesis nodes near top-left and top-right
+        red_flag_L = 7
+        red_flag_R = 10
+
+        blue_flag = None
+        bottom_basin_anchor_node = 33
+
+        # Top basin region computation...
+        top_left_basin_ = set(nx.single_source_shortest_path_length(G, red_flag_L, cutoff=1).keys())
+        top_left_basin = copy.deepcopy(top_left_basin_)
+        for node in top_left_basin_:
+            if node in passage_nodes:
+                top_left_basin.remove(node)
+        top_left_basin = list(top_left_basin)
+
+        top_right_basin_ = set(nx.single_source_shortest_path_length(G, red_flag_R, cutoff=1).keys())
+        top_right_basin = copy.deepcopy(top_right_basin_)
+        for node in top_right_basin_:
+            if node in passage_nodes:
+                top_right_basin.remove(node)
+        top_right_basin = list(top_right_basin)
+
+        # Bottom basin region computation...
+        bottom_region = set(nx.single_source_shortest_path_length(G, bottom_basin_anchor_node, cutoff=1).keys())
+        bottom_region = list(bottom_region)
+
+        return BasinCorridorGraph(
+            G=G,
+            pos=pos,
+            red_flag_L=red_flag_L,
+            red_flag_R=red_flag_R,
+            blue_flag=bottom_basin_anchor_node,
+            top_left_basin=top_left_basin,
+            top_right_basin=top_right_basin,
+            bottom_region=bottom_region,
+        )
+
     def construct_edge_attr(self):
         # Populating edge_attr in the same consistent order...
         G = copy.deepcopy(self.graph)
@@ -906,40 +1038,48 @@ class GraphCTF(ParallelEnv):
             self.blue_flag_pos = np.array(node_pos_dict[self.blue_flag_node])
         else:
             # Random-geometric graphs: sample flag positions and snap to closest node
-            red_flag_x_lim_left = [2,3] #[1, 2] #[0, 2]
-            red_flag_x_lim_right = [7,8] #[8, 9] #[8, 10]
+            if self.highbay_experiment:
+                self.red_flag_node = 7
+                self.red_flag_pos = np.array(node_pos_dict[self.red_flag_node])
 
-            red_flag_x_lim, red_flag_y_lim = red_flag_x_lim_left, [9, 10]
-            red_flag_x_lim_2 = red_flag_x_lim_right
-            blue_flag_x_lim, blue_flag_y_lim = [4, 6], [0, 1] # Blue Flag Center.
-            np.random.seed(seed=self.graph_gen_seed+1)
+                self.red_flag_2_node = 10
+                self.red_flag_2_pos = np.array(node_pos_dict[self.red_flag_2_node])
 
-            red_flag_pos_sampled = (np.random.uniform(*red_flag_x_lim), np.random.uniform(*red_flag_y_lim))
-            red_flag_pos_sampled_2 = (np.random.uniform(*red_flag_x_lim_2), np.random.uniform(*red_flag_y_lim))
-            blue_flag_pos_sampled = (np.random.uniform(*blue_flag_x_lim), np.random.uniform(*blue_flag_y_lim))
+            else:
+                red_flag_x_lim_left = [2,3] #[1, 2] #[0, 2]
+                red_flag_x_lim_right = [7,8] #[8, 9] #[8, 10]
 
-            # Closest node to sampled red flag pos...
-            red_flag_node_idx = min(
-                node_pos_dict.items(),
-                key=lambda item: np.linalg.norm(np.array(item[1]) - red_flag_pos_sampled)
-            )[0]
-            self.red_flag_node = red_flag_node_idx
-            self.red_flag_pos = np.array(node_pos_dict[self.red_flag_node])
+                red_flag_x_lim, red_flag_y_lim = red_flag_x_lim_left, [9, 10]
+                red_flag_x_lim_2 = red_flag_x_lim_right
+                blue_flag_x_lim, blue_flag_y_lim = [4, 6], [0, 1] # Blue Flag Center.
+                np.random.seed(seed=self.graph_gen_seed+1)
 
-            red_flag_2_node_idx = min(
-                node_pos_dict.items(),
-                key=lambda item: np.linalg.norm(np.array(item[1]) - red_flag_pos_sampled_2)
-            )[0]
-            self.red_flag_2_node = red_flag_2_node_idx
-            self.red_flag_2_pos = np.array(node_pos_dict[self.red_flag_2_node])
+                red_flag_pos_sampled = (np.random.uniform(*red_flag_x_lim), np.random.uniform(*red_flag_y_lim))
+                red_flag_pos_sampled_2 = (np.random.uniform(*red_flag_x_lim_2), np.random.uniform(*red_flag_y_lim))
+                blue_flag_pos_sampled = (np.random.uniform(*blue_flag_x_lim), np.random.uniform(*blue_flag_y_lim))
 
-            # Closest node to sampled blue flag pos...
-            blue_flag_node_idx = min(
-                node_pos_dict.items(),
-                key=lambda item: np.linalg.norm(np.array(item[1]) - blue_flag_pos_sampled)
-            )[0]
-            self.blue_flag_node = blue_flag_node_idx
-            self.blue_flag_pos = np.array(node_pos_dict[self.blue_flag_node])
+                # Closest node to sampled red flag pos...
+                red_flag_node_idx = min(
+                    node_pos_dict.items(),
+                    key=lambda item: np.linalg.norm(np.array(item[1]) - red_flag_pos_sampled)
+                )[0]
+                self.red_flag_node = red_flag_node_idx
+                self.red_flag_pos = np.array(node_pos_dict[self.red_flag_node])
+
+                red_flag_2_node_idx = min(
+                    node_pos_dict.items(),
+                    key=lambda item: np.linalg.norm(np.array(item[1]) - red_flag_pos_sampled_2)
+                )[0]
+                self.red_flag_2_node = red_flag_2_node_idx
+                self.red_flag_2_pos = np.array(node_pos_dict[self.red_flag_2_node])
+
+                # Closest node to sampled blue flag pos...
+                blue_flag_node_idx = min(
+                    node_pos_dict.items(),
+                    key=lambda item: np.linalg.norm(np.array(item[1]) - blue_flag_pos_sampled)
+                )[0]
+                self.blue_flag_node = blue_flag_node_idx
+                self.blue_flag_pos = np.array(node_pos_dict[self.blue_flag_node])
 
         # Computing valid spawn nodes for Red and Blue...
         red_flag_pos = np.array(node_pos_dict[self.red_flag_node])
