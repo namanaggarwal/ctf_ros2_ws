@@ -216,7 +216,7 @@ class RoverNode(Node):
 
         offset = 0.0
         if self.rover_team_name.upper() == "BLUE":
-            offset = 1.0
+            offset = 2.0
 
         text_marker.pose.position.y = float(self.team_index) + offset
         text_marker.pose.position.z = 1.0
