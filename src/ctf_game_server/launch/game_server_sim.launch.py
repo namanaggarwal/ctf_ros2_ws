@@ -400,88 +400,6 @@ unset AMENT_PREFIX_PATH COLCON_PREFIX_PATH CMAKE_PREFIX_PATH
 
     return yaml.dump(yaml_content, default_flow_style=False, sort_keys=False)
 
-
-# def generate_swap_multiagent_ground_yaml(
-#         setup_bash: Path, agents: list, radius: float, angle_offset: float,
-#         ros_domain_id: int = 20, env: str = 'ACL_office') -> str:
-#     """Generate YAML for multi-agent ground robot position swapping in Gazebo.
-
-#     Each agent swaps with its diametrically opposite peer on a circle.
-#     No exploration — uses goal_monitor for continuous swap behavior.
-#     """
-#     panes = []
-
-#     # Base station: Gazebo world + RViz
-#     panes.append({
-#         'shell_command': [
-#             'source /usr/share/gazebo/setup.bash',
-#             f'ros2 launch mighty base_mighty.launch.py '
-#             f'use_gazebo_gui:=false use_rviz:=true env:={env} use_ground_robot:=true'
-#         ]
-#     })
-
-#     # Per-agent: odom converter + ACL mapper + mighty
-#     for i, agent in enumerate(agents):
-#         ns = agent['namespace']
-#         delay = 10 + i * 2
-
-#         panes.append({
-#             'shell_command': [
-#                 f'sleep {delay}',
-#                 f'ros2 run mighty convert_odom_to_state '
-#                 f'--ros-args -r __ns:=/{ns} -r odom:=odom -r state:=state'
-#             ]
-#         })
-
-#         panes.append({
-#             'shell_command': [
-#                 f'sleep {delay}',
-#                 f'ros2 launch global_mapper_ros global_mapper_node.launch.py '
-#                 f'use_gazebo:=true use_obstacle_tracker:=false '
-#                 f'param_file:=sim_ground_robot.yaml quad:={ns}'
-#             ]
-#         })
-
-#         panes.append({
-#             'shell_command': [
-#                 f'sleep {delay + 2}',
-#                 f"ros2 launch mighty onboard_mighty.launch.py namespace:={ns} "
-#                 f"x:={agent['x']} y:={agent['y']} z:={agent['z']} yaw:={agent['yaw']} "
-#                 f"sim_env:=gazebo use_ground_robot:=true "
-#                 f"num_agents:={len(agents)}"
-#             ]
-#         })
-
-#     # Goal monitor for position swapping
-#     num_agents = len(agents)
-#     panes.append({
-#         'shell_command': [
-#             'sleep 25',
-#             f'ros2 launch mighty goal_monitor.launch.py num_agents:={num_agents} '
-#             f'radius:={radius} angle_offset:={angle_offset} '
-#             f'agent_prefix:=NX goal_tolerance:=1.0 use_ground_robot:=true'
-#         ]
-#     })
-
-#     yaml_content = {
-#         'session_name': 'mighty_sim',
-#         'windows': [{
-#             'window_name': 'main',
-#             'layout': 'tiled',
-#             'shell_command_before': [
-#                 f'''if [ -z "$SETUP_BASH" ] || [ ! -f "$SETUP_BASH" ]; then
-#   echo "[ERROR] SETUP_BASH is missing or invalid: $SETUP_BASH" >&2
-#   exit 1
-# fi
-# unset AMENT_PREFIX_PATH COLCON_PREFIX_PATH CMAKE_PREFIX_PATH
-# . "$SETUP_BASH"''',
-#                 f'export ROS_DOMAIN_ID={ros_domain_id}'
-#             ],
-#             'panes': panes
-#         }]
-#     }
-
-#     return yaml.dump(yaml_content, default_flow_style=False, sort_keys=False)
 def generate_swap_multiagent_ground_yaml(
         setup_bash: Path, agents: list, radius: float, angle_offset: float,
         ros_domain_id: int = 20, env: str = 'ACL_office') -> str:
@@ -574,21 +492,44 @@ unset AMENT_PREFIX_PATH COLCON_PREFIX_PATH CMAKE_PREFIX_PATH
         'panes': state_panes
     }
 
-    # CTF
+    ###### CTF WINDOW ######
+    ctf_ws = os.getenv("CTF_WS")
+    ctf_setup = Path(ctf_ws) / "install" / "setup.bash"
+    rover_ids = ["01", "02", "03", "04"]
+    ctf_panes = []
+    
+    ### GAME SERVER PANE ###
+    ctf_panes.append({
+        'shell_command': [
+            'sleep 20',
+            f'source {ctf_setup}',
+            'export ROS_LOG_DIR=~/ctf_data/logs',
+            'ros2 launch ctf_game_server game_server.launch.py use_hardware:=false'
+        ]
+    })
+    ### ROVER PANES ###
+    for i, vehnum in enumerate(rover_ids):
+        team = "blue" if i < 2 else "red"
+        params_file = f'$(ros2 pkg prefix ctf_rover)/share/ctf_rover/config/params_{team}_{i%2}.yaml'
+
+        ctf_panes.append({
+            'shell_command': [
+                f'source {ctf_setup}',
+                'export VEHTYPE=NX',
+                f'export VEHNUM={vehnum}',
+                f'export PARAMS_FILE={params_file}',
+                'sleep 25',
+                'ros2 run ctf_rover rover_node --ros-args --params-file $PARAMS_FILE -p use_hardware:=false'
+            ]
+        })
+
     ctf_window = {
         'window_name': 'ctf',
-        'layout': 'even-horizontal',
+        'layout': 'main-horizontal',
         'shell_command_before': base_shell(),
-        'panes': [{
-            'shell_command': [
-                'sleep 25',
-                f'ros2 launch mighty goal_monitor.launch.py '
-                f'num_agents:={len(agents)} '
-                f'radius:={radius} angle_offset:={angle_offset} '
-                f'agent_prefix:=NX goal_tolerance:=1.0 use_ground_robot:=true'
-            ]
-        }]
+        'panes': ctf_panes
     }
+    ###### END CTF WINDOW ######
 
     yaml_content = {
         'session_name': 'mighty_sim',

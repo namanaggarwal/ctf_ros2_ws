@@ -44,12 +44,14 @@ class GameServer(Node):
         self.declare_parameter("tag_radius", 0.55)
         self.declare_parameter("tag_angle_tolerance", 0.785)  # ~45 degrees
         self.declare_parameter("tag_cooldown", 10.0)
+        self.declare_parameter("use_hardware", False)
 
         self.goal_height = self.get_parameter("goal_height").value
         self.total_rovers = self.get_parameter("total_rovers").value
         self._seed = self.get_parameter("seed").value
         self.ctf_player_config = self.get_parameter("ctf_player_config").value
         self.use_dlio = self.get_parameter("use_dlio").value
+        self.use_hardware = self.get_parameter("use_hardware").value
 
         self.get_logger().info(f"TOTAL ROVERS {self.total_rovers}")
 
@@ -424,7 +426,7 @@ class GameServer(Node):
         rover_name: str, used for marker namespace
         """
         marker = Marker()
-        marker.header.frame_id = "world"
+        marker.header.frame_id = "world" if self.use_hardware else "map"
         marker.header.stamp = self.get_clock().now().to_msg()
         
         marker.ns = rover_name

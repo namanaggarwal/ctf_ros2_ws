@@ -23,7 +23,7 @@ source ~/.bashrc
 From your workspace root, run:
 
 ```bash
-python3 src/ctf_game_server/launch/run_sim.py --mode swap-multiagent-ground
+python3 src/ctf_game_server/launch/game_server_sim.launch.py --mode swap-multiagent-ground
 ```
 
 This will launch the multi-agent ground robot swap simulation in RViz.

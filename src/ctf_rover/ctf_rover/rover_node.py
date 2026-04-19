@@ -42,9 +42,11 @@ class RoverNode(Node):
         self.declare_parameter("arrival_tolerance", 0.5)
         self.declare_parameter("tag_radius", 0.55)
         self.declare_parameter("tag_angle_tolerance", 0.785)  # ~45 degrees
+        self.declare_parameter("use_hardware", False)
 
         self.rover_team_name = self.get_parameter("team").value
         self.arrival_tolerance = self.get_parameter("arrival_tolerance").value
+        self.use_hardware = self.get_parameter("use_hardware").value
 
         # Roster and CTF agent identity — built from the server's INIT message.
         # Not available at startup; populated in server_to_rover_callback.
@@ -53,7 +55,7 @@ class RoverNode(Node):
         self.team_index = None
 
         self.get_logger().info(
-            f"Rover {self.rover_name} | team={self.rover_team_name} | waiting for INIT roster"
+            f"Rover {self.rover_name} | team={self.rover_team_name} | hw={self.use_hardware} | waiting for INIT roster"
         )
 
         # Join game service
@@ -89,8 +91,10 @@ class RoverNode(Node):
         self.X_map_world = None
         self.global_frame = "world"
         self.initial_frame = self.rover_name
-        self.local_frame = f"{self.rover_name}/map"
-        self.init_timer = self.create_timer(0.2, self.initialize_tf)
+        self.local_frame = f"{self.rover_name}/map" if self.use_hardware else 'map'
+
+        if self.use_hardware:
+            self.init_timer = self.create_timer(0.2, self.initialize_tf)
 
         # World-state: populated once the server's INIT roster arrives
         self.all_rover_poses = {}
@@ -207,7 +211,8 @@ class RoverNode(Node):
                     f"ctf_agent={self.ctf_agent_name} team_index={self.team_index}"
                 )
 
-            self.initialize_tf()
+            if self.use_hardware:
+                self.initialize_tf()
 
             goal = msg.commanded_goal
             p = goal.pos
@@ -216,22 +221,37 @@ class RoverNode(Node):
             )
 
             global_point = np.array([p.x, p.y, p.z, 1.0])
-            local_point = self.X_map_world @ global_point
 
-            v = goal.vel
-            local_vel = self.X_map_world[:3, :3] @ np.array([v.x, v.y, v.z])
+            # TODO cleanup
+            if self.use_hardware:
+                local_point = self.X_map_world @ global_point
 
-            local_goal = PoseStamped()
-            local_goal.header.stamp = goal.header.stamp
-            local_goal.header.frame_id = self.local_frame
-            local_goal.pose.position.x = local_point[0]
-            local_goal.pose.position.y = local_point[1]
-            local_goal.pose.position.z = self.goal_height
-            local_goal.pose.orientation.w = 1.0
-            self.publisher_local_dynus_command_goal.publish(local_goal)
-            self.get_logger().info(
-                f"[ROVER] Published spawn goal [{local_point[0]:.3f}, {local_point[1]:.3f}]"
-            )
+                v = goal.vel
+                local_vel = self.X_map_world[:3, :3] @ np.array([v.x, v.y, v.z])
+
+                local_goal = PoseStamped()
+                local_goal.header.stamp = goal.header.stamp
+                local_goal.header.frame_id = self.local_frame
+                local_goal.pose.position.x = local_point[0]
+                local_goal.pose.position.y = local_point[1]
+                local_goal.pose.position.z = self.goal_height
+                local_goal.pose.orientation.w = 1.0
+                self.publisher_local_dynus_command_goal.publish(local_goal)
+                self.get_logger().info(
+                    f"[ROVER] Published spawn goal [{local_point[0]:.3f}, {local_point[1]:.3f}]"
+                )
+            else:
+                local_goal = PoseStamped()
+                local_goal.header.stamp = goal.header.stamp
+                local_goal.header.frame_id = self.local_frame
+                local_goal.pose.position.x = global_point[0]
+                local_goal.pose.position.y = global_point[1]
+                local_goal.pose.position.z = self.goal_height
+                local_goal.pose.orientation.w = 1.0
+                self.publisher_local_dynus_command_goal.publish(local_goal)
+                self.get_logger().info(
+                    f"[ROVER] Published spawn goal [{global_point[0]:.3f}, {global_point[1]:.3f}]"
+                )
 
             # One-time policy initialisation
             if self.env is None:
@@ -254,16 +274,28 @@ class RoverNode(Node):
                 return
 
             global_point = np.array([p.x, p.y, p.z, 1.0])
-            local_point = self.X_map_world @ global_point
 
-            local_goal = PoseStamped()
-            local_goal.header.stamp = self.get_clock().now().to_msg()
-            local_goal.header.frame_id = self.local_frame
-            local_goal.pose.position.x = local_point[0]
-            local_goal.pose.position.y = local_point[1]
-            local_goal.pose.position.z = self.goal_height
-            local_goal.pose.orientation.w = 1.0
-            self.publisher_local_dynus_command_goal.publish(local_goal)
+            # TODO cleanup
+            if self.use_hardware:
+                local_point = self.X_map_world @ global_point
+
+                local_goal = PoseStamped()
+                local_goal.header.stamp = self.get_clock().now().to_msg()
+                local_goal.header.frame_id = self.local_frame
+                local_goal.pose.position.x = local_point[0]
+                local_goal.pose.position.y = local_point[1]
+                local_goal.pose.position.z = self.goal_height
+                local_goal.pose.orientation.w = 1.0
+                self.publisher_local_dynus_command_goal.publish(local_goal)
+            else:
+                local_goal = PoseStamped()
+                local_goal.header.stamp = self.get_clock().now().to_msg()
+                local_goal.header.frame_id = self.local_frame
+                local_goal.pose.position.x = global_point[0]
+                local_goal.pose.position.y = global_point[1]
+                local_goal.pose.position.z = self.goal_height
+                local_goal.pose.orientation.w = 1.0
+                self.publisher_local_dynus_command_goal.publish(local_goal)
 
             # Update goal so arrival detection fires at the respawn node.
             spawn_sim = self._vicon_to_sim(np.array([p.x, p.y]))
@@ -521,7 +553,7 @@ class RoverNode(Node):
         if not self.policy_ready:
             self.get_logger().warn("policy_step called but policy not ready.")
             return
-        if self.X_map_world is None:
+        if (self.use_hardware) and (self.X_map_world is None):
             self.get_logger().warn("policy_step called but TF not ready.")
             return
 
@@ -567,16 +599,27 @@ class RoverNode(Node):
         sim_xy = np.array(self.env.node_pose_dict[next_node])
         vicon_xy = self._sim_to_vicon(sim_xy)
         vicon_pt = np.array([vicon_xy[0], vicon_xy[1], self.goal_height, 1.0])
-        local_pt = self.X_map_world @ vicon_pt
 
-        goal_msg = PoseStamped()
-        goal_msg.header.stamp = self.get_clock().now().to_msg()
-        goal_msg.header.frame_id = self.local_frame
-        goal_msg.pose.position.x = local_pt[0]
-        goal_msg.pose.position.y = local_pt[1]
-        goal_msg.pose.position.z = self.goal_height
-        goal_msg.pose.orientation.w = 1.0
-        self.publisher_local_dynus_command_goal.publish(goal_msg)
+        if self.use_hardware:
+            local_pt = self.X_map_world @ vicon_pt
+
+            goal_msg = PoseStamped()
+            goal_msg.header.stamp = self.get_clock().now().to_msg()
+            goal_msg.header.frame_id = self.local_frame
+            goal_msg.pose.position.x = local_pt[0]
+            goal_msg.pose.position.y = local_pt[1]
+            goal_msg.pose.position.z = self.goal_height
+            goal_msg.pose.orientation.w = 1.0
+            self.publisher_local_dynus_command_goal.publish(goal_msg)
+        else:
+            goal_msg = PoseStamped()
+            goal_msg.header.stamp = self.get_clock().now().to_msg()
+            goal_msg.header.frame_id = self.local_frame
+            goal_msg.pose.position.x = vicon_pt[0]
+            goal_msg.pose.position.y = vicon_pt[1]
+            goal_msg.pose.position.z = self.goal_height
+            goal_msg.pose.orientation.w = 1.0
+            self.publisher_local_dynus_command_goal.publish(goal_msg)
 
         self.get_logger().info(
             f"[POLICY] action={action} → node_idx={next_node_idx} "
