@@ -8,6 +8,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from dynus_interfaces.msg import State
 from scipy.spatial.transform import Rotation as R
+from visualization_msgs.msg import Marker
 
 from ctf_msgs.msg import ServerToRoverMessage
 from std_msgs.msg import String
@@ -83,6 +84,7 @@ class RoverNode(Node):
         self._tag_event_pub = self.create_publisher(String, "/ctf/tag_event", 10)
         # Publisher to notify server that this rover has reached its spawn position
         self._rover_ready_pub = self.create_publisher(String, "/ctf/rover_ready", 10)
+        self.text_marker_pub = self.create_publisher(Marker, f"/{self.rover_name}/text", 10)
 
         # TF infrastructure
         self.tf_buffer = tf2_ros.Buffer()
@@ -120,6 +122,8 @@ class RoverNode(Node):
         self._restep_timer = None
 
         self.get_logger().info("RoverNode initialised, waiting for INIT from server.")
+
+        self.num_policy_steps = 0
 
     # ------------------------------------------------------------------
     # Join-game handshake
@@ -186,12 +190,51 @@ class RoverNode(Node):
     # ------------------------------------------------------------------
     # Server → rover command handler
     # ------------------------------------------------------------------
+    # publish text helper
+    def text_publisher(self, text_str):
+
+        # create flag markers
+        text_marker = Marker()
+        text_marker.header.frame_id = self.local_frame
+        text_marker.header.stamp = self.get_clock().now().to_msg()
+
+        text_marker.ns = f"{self.rover_name}_text"
+        text_marker.id = 11
+        text_marker.type = Marker.TEXT_VIEW_FACING
+        text_marker.action = Marker.ADD
+
+        text_marker.scale.z = 0.8
+
+        text_marker.color.a = 1.0
+        text_marker.color.r = 1.0
+        text_marker.color.g = 1.0
+        text_marker.color.b = 1.0
+
+        # location
+        text_marker.pose.position.x = -8.0
+        self.get_logger().info(f"IDX = {self.team_index}")
+
+        offset = 0.0
+        if self.rover_team_name.upper() == "BLUE":
+            offset = 5.0
+
+        text_marker.pose.position.y = float(self.team_index) + offset
+        text_marker.pose.position.z = 1.0
+
+        text_marker.pose.orientation.x = 0.0
+        text_marker.pose.orientation.y = 0.0
+        text_marker.pose.orientation.z = 0.0
+        text_marker.pose.orientation.w = 1.0
+        text_marker.text = text_str
+
+        # publish nodes
+        self.text_marker_pub.publish(text_marker)
 
     def server_to_rover_callback(self, msg: ServerToRoverMessage):
         command = msg.command
         self.get_logger().info(f"server_to_rover_callback: command={command}")
 
-        if command == "INIT":
+        if command == "INIT":     
             # Build rr_to_ctf from the server-assigned roster (first INIT only).
             if not self.rr_to_ctf:
                 for rr, ctf in zip(msg.roster_rover_names, msg.roster_ctf_agent_names):
@@ -211,6 +254,8 @@ class RoverNode(Node):
                     f"[INIT] Roster received: {self.rr_to_ctf} | "
                     f"ctf_agent={self.ctf_agent_name} team_index={self.team_index}"
                 )
+
+            self.text_publisher(f"{self.rover_name}: INIT")
 
             if not self.use_mocap:
                 self.initialize_tf()
@@ -623,6 +668,10 @@ class RoverNode(Node):
                 if self._restep_timer is not None:
                     self._restep_timer.cancel()
                 self._restep_timer = self.create_timer(1.0, self._on_restep_timer)
+        
+        self.get_logger().info(f"POLICY STEP = {self.num_policy_steps}")
+        self.text_publisher(f"{self.rover_name}: STEP {self.num_policy_steps}")
+        self.num_policy_steps += 1
 
 
 def main(args=None):
