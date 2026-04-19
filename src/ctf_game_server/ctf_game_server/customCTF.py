@@ -988,6 +988,48 @@ class GraphCTF(ParallelEnv):
         bottom_region = set(nx.single_source_shortest_path_length(G, bottom_basin_anchor_node, cutoff=1).keys())
         bottom_region = list(bottom_region)
 
+
+        ####### SCALE COORDINATES...
+
+        pos_dict = nx.get_node_attributes(G, 'pos')
+        for node in G.nodes:
+            print("node_idx: {}, pos: {}".format(node, pos_dict[node]))
+        x_min, x_max = +np.inf, -np.inf
+        y_min, y_max = +np.inf, -np.inf
+
+        x_min_highbay = 0
+        x_max_highbay = 10
+
+        y_min_highbay = -10
+        y_max_highbay = 0
+
+        for node_idx, node_pos in pos_dict.items():
+            print("node_idx: {}, node_pos: {}".format(node_idx, node_pos))
+            x_node, y_node = node_pos
+
+            x_min = min(x_min, x_node)
+            x_max = max(x_max, x_node)
+
+            y_min = min(y_min, y_node)
+            y_max = max(y_max, y_node)
+        print("x_min: {}, x_max: {}".format(x_min, x_max))
+        print("y_min: {}, y_max: {}".format(y_min, y_max))
+
+        def update_pos(pos):
+        # x_new \in [0, 10]
+        # y_new \in [-10, 0]
+            import numpy as np
+            assert isinstance(pos, np.ndarray)
+            x, y = pos
+
+            x_new = 0 + 10.*(x-x_min)/(x_max - x_min)
+            y_new = -10 + 10.*(y-y_min)/(y_max - y_min)
+            return np.array([x_new, y_new])
+
+        updated_pos = {node: {"pos": update_pos(pos_dict[node])} for node in G.nodes()}
+        nx.set_node_attributes(G, updated_pos)
+        ####################################################
+
         return BasinCorridorGraph(
             G=G,
             pos=pos,
