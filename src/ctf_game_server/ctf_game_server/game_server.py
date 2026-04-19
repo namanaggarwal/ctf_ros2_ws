@@ -115,6 +115,9 @@ class GameServer(Node):
         self.graph_pub = self.create_publisher(Marker, 'ctf_graph', 10)
         self.graph_pub_timer = self.create_timer(self.graph_timer_period, self.graph_pub_cb)
 
+        # clock publisher
+        self.text_marker_pub = self.create_publisher(Marker, f"/clock_text", 10)
+
         """
         # Service for rover to request game state
         self.srv = self.create_service(
@@ -263,6 +266,46 @@ class GameServer(Node):
             # publish nodes
             self.graph_pub.publish(flag_marker)
     ################# END VISUALIZE GRAPH #################
+
+    def clock_pub_cb(self):
+        # clock_str = "TEST"
+        time_passed = (self.get_clock().now() - self.start_time).nanoseconds / 1e9
+        clock_str = f"TIMER: {time_passed:.1f}"
+        self.text_publisher(clock_str)
+
+    # publish text helper
+    def text_publisher(self, text_str):
+
+        # create flag markers
+        text_marker = Marker()
+        text_marker.header.frame_id = "world"
+        text_marker.header.stamp = self.get_clock().now().to_msg()
+
+        text_marker.ns = f"server_text"
+        text_marker.id = 11
+        text_marker.type = Marker.TEXT_VIEW_FACING
+        text_marker.action = Marker.ADD
+
+        text_marker.scale.z = 0.8
+
+        text_marker.color.a = 1.0
+        text_marker.color.r = 1.0
+        text_marker.color.g = 1.0
+        text_marker.color.b = 1.0
+
+        # location
+        text_marker.pose.position.x = -8.0
+        text_marker.pose.position.y = 6.0
+        text_marker.pose.position.z = 1.0
+
+        text_marker.pose.orientation.x = 0.0
+        text_marker.pose.orientation.y = 0.0
+        text_marker.pose.orientation.z = 0.0
+        text_marker.pose.orientation.w = 1.0
+        text_marker.text = text_str
+
+        # publish nodes
+        self.text_marker_pub.publish(text_marker)
     
     # initialize tf from world to map for a given rover
     def initialize_tf(self, rover_name):
@@ -534,6 +577,12 @@ class GameServer(Node):
         # Then mark game as started
         self.game_started = True
         self.get_logger().info("[GAMESERVER] Game started!")
+
+        # start a timer to count up the time
+        self.clock_text_timer_period = 0.1
+        self.start_time = self.get_clock().now()
+        self.clock_pub = self.create_timer(self.clock_text_timer_period, self.clock_pub_cb)
+        
         return
     
     def compute_initial_poses(self):
