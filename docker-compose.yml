@@ -1,0 +1,23 @@
+networks:
+  ros_net:
+    driver: bridge
+
+services:
+  game_server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ros2 launch ctf_game_server game_server.launch.py
+    volumes:
+      - .:/ros2_ws:cached
+    environment:
+      - ROS_DOMAIN_ID=42
+    networks:
+      - ros_net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
