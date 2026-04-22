@@ -84,6 +84,8 @@ class RoverNode(Node):
         self._tag_event_pub = self.create_publisher(String, "/ctf/tag_event", 10)
         # Publisher to notify server that this rover has reached its spawn position
         self._rover_ready_pub = self.create_publisher(String, "/ctf/rover_ready", 10)
+        # Publisher to notify server when this rover's team discovers the enemy flag
+        self._flag_discovered_pub = self.create_publisher(String, "/ctf/flag_discovered", 10)
         self.text_marker_pub = self.create_publisher(Marker, f"/{self.rover_name}/text", 10)
 
         # TF infrastructure
@@ -505,6 +507,9 @@ class RoverNode(Node):
                             f"[FLAG RESOLVED] {rr_name} ({self.rr_to_ctf[rr_name]}) reached "
                             f"frontier node {node} — Red flag hypothesis confirmed for all Blue agents."
                         )
+                        disc_msg = String()
+                        disc_msg.data = f"BLUE:{rr_name}"
+                        self._flag_discovered_pub.publish(disc_msg)
                     break
 
     # ------------------------------------------------------------------

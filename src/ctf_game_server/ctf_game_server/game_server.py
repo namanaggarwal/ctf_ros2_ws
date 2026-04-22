@@ -107,6 +107,10 @@ class GameServer(Node):
         # Subscribe to rover-reported tag events and spawn confirmations.
         self.create_subscription(String, "/ctf/tag_event", self.handle_tag_event, 10)
         self.create_subscription(String, "/ctf/rover_ready", self.handle_rover_ready, 10)
+        self.create_subscription(String, "/ctf/flag_discovered", self.handle_flag_discovered, 10)
+
+        self._flag_discovered_text = {}  # team -> "BLUE flag discovered by RR01" etc.
+        self.flag_text_pub = self.create_publisher(Marker, '/flag_discovered_text', 10)
 
         self.marker_pub = self.create_publisher(Marker, 'initial_pose_marker', 10)
 
@@ -698,6 +702,42 @@ class GameServer(Node):
             msg.command = 'START'
             self.server_to_rover_publishers[rr_name].publish(msg)
             self.get_logger().info(f"[GAMESERVER] START → {rr_name}")
+
+    # ------------------------------------------------------------------
+    # Flag discovery
+    # ------------------------------------------------------------------
+
+    def handle_flag_discovered(self, msg: String):
+        try:
+            team, rover_name = msg.data.split(':')
+        except ValueError:
+            return
+        team = team.upper()
+        if team in self._flag_discovered_text:
+            return  # already shown
+
+        self._flag_discovered_text[team] = rover_name
+        self.get_logger().info(f"[FLAG] {team} flag discovered by {rover_name}")
+
+        # One marker per team, stacked vertically so they don't overlap
+        y_offset = 0.0 if team == "BLUE" else -1.2
+        color = (0.3, 0.6, 1.0) if team == "BLUE" else (1.0, 0.3, 0.3)
+
+        m = Marker()
+        m.header.frame_id = "world"
+        m.header.stamp = self.get_clock().now().to_msg()
+        m.ns = "flag_discovered"
+        m.id = 20 if team == "BLUE" else 21
+        m.type = Marker.TEXT_VIEW_FACING
+        m.action = Marker.ADD
+        m.scale.z = 0.6
+        m.color.r, m.color.g, m.color.b, m.color.a = color[0], color[1], color[2], 1.0
+        m.pose.position.x = -8.0
+        m.pose.position.y = 4.5 + y_offset
+        m.pose.position.z = 1.0
+        m.pose.orientation.w = 1.0
+        m.text = f"{team} flag discovered! ({rover_name})"
+        self.flag_text_pub.publish(m)
 
     # ------------------------------------------------------------------
     # Physical tag handling
