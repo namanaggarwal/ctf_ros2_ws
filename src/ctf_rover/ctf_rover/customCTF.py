@@ -309,6 +309,9 @@ class BasinCorridorGraph:
     top_left_basin: List[int]
     top_right_basin: List[int]
     bottom_region: List[int]
+    # 3-flag extension (None = 2-flag scenario)
+    red_flag_M: Optional[int] = None
+    top_mid_basin: Optional[List[int]] = None
 
 from matplotlib.patches import Circle # For rendering...
 class GraphCTF(ParallelEnv):
@@ -329,8 +332,10 @@ class GraphCTF(ParallelEnv):
                  active_team=None,  # 'Red' or 'Blue' - the team being trained (opponent is passive)
                  fixed_flag_hypothesis=0,  # None = sample; 0 = left flag; 1 = right flag
                  flag_hypothesis_weights=None,  # [w0, w1] unnormalized; None = uniform when sampling
+                 n_flag_hypotheses=2,  # 2 = standard L/R; 3 = add middle flag (basin-corridor v1 only)
                  **kwargs):
         self.fixed_flag_hypothesis = fixed_flag_hypothesis
+        self.n_flag_hypotheses = n_flag_hypotheses  # 2 or 3
         if flag_hypothesis_weights is not None:
             import numpy as _np
             w = _np.array(flag_hypothesis_weights, dtype=float)
@@ -344,8 +349,6 @@ class GraphCTF(ParallelEnv):
         """
         Description: self.game_mode = 'half' is no blue flag. 'full' is blue flag.
         """
-
-        self.highbay_experiment = kwargs.get('highbay_experiment', True)
 
         # Opponent policy integration (avoids GraphCoopEnv wrapper overhead)
         # Note: actual initialization is deferred until after agents are defined
@@ -390,7 +393,10 @@ class GraphCTF(ParallelEnv):
 
         self.graph_gen_seed = kwargs.get('graph_gen_seed', 555) #kwargs.get('graph_gen_seed', 282)
         self.max_degree = kwargs.get('max_degree', 5) #kwargs.get('max_degree', 8)
+        self.map_variant = kwargs.get('map_variant', 'default')  # 'default' | 'highbay'
         self.graph = None
+        self.ctf_player_config = ctf_player_config
+
         self.gen_graph(random_graph_family='basin-cooridoor') #self.gen_graph(random_graph_family='random-geometric', max_degree=self.max_degree)
         self.red_flag_node, self.blue_flag_node = None, None
         
@@ -425,9 +431,15 @@ class GraphCTF(ParallelEnv):
         self.num_teams = 2
         if ctf_player_config == "1v1":
             self.num_agents_blue_team = 1
+            self.num_agents_red_team = 1
         elif ctf_player_config == "2v2":
             self.num_agents_blue_team = 2
-        self.num_agents_red_team = self.num_agents_blue_team
+            self.num_agents_red_team = 2
+        elif ctf_player_config == "3v2":
+            self.num_agents_blue_team = 3
+            self.num_agents_red_team = 2
+        else:
+            raise ValueError(f"Unknown ctf_player_config: {ctf_player_config!r}")
 
         self.blue_team_agents = ["Blue_" + "{}".format(i) for i in range(self.num_agents_blue_team)]
         self.red_team_agents = ["Red_" + "{}".format(i) for i in range(self.num_agents_red_team)]
@@ -576,15 +588,15 @@ class GraphCTF(ParallelEnv):
             
             
         elif random_graph_family == 'basin-cooridoor':
-            if self.highbay_experiment:
+            if self.ctf_player_config == '3v2':
+                bc = self.make_3corridor_map()
+            elif self.map_variant == 'highbay':
                 bc = self.make_highbay_map()
-                G = bc.G
-                self._bc = bc 
             else:
                 bc = self.make_basin_corridor_medium_v1()
-                G = bc.G
-                self._bc = bc  # preserve basin-corridor metadata for gen_graph_artifacts
-                #self._bc_info = build_bc_info(self._bc) # train_blue_curicullum.py has build_bc_info() which uses Structs from basin_corridor_policies.py
+            G = bc.G
+            self._bc = bc  # preserve basin-corridor metadata for gen_graph_artifacts
+            #self._bc_info = build_bc_info(self._bc) # train_blue_curicullum.py has build_bc_info() which uses Structs from basin_corridor_policies.py
 
         for i, node in enumerate(G.nodes):
             G.nodes[node]['node_idx'] = i # Storing node_idx as a feature...
@@ -859,6 +871,15 @@ class GraphCTF(ParallelEnv):
                 top_right_basin.remove(node)
         top_right_basin = list(top_right_basin)
 
+        # Middle flag: row=2, col=5 (node 27) — between L and R in the top region.
+        red_flag_M = 27
+        top_mid_basin_ = set(nx.single_source_shortest_path_length(G, red_flag_M, cutoff=4).keys())
+        top_mid_basin = copy.deepcopy(top_mid_basin_)
+        for node in top_mid_basin_:
+            if node in passage_nodes:
+                top_mid_basin.remove(node)
+        top_mid_basin = list(top_mid_basin)
+
         # Bottom basin region computation...
         bottom_region = set(nx.single_source_shortest_path_length(G, bottom_basin_anchor_node, cutoff=3).keys())
         bottom_region = list(bottom_region)
@@ -872,6 +893,8 @@ class GraphCTF(ParallelEnv):
             top_left_basin=top_left_basin,
             top_right_basin=top_right_basin,
             bottom_region=bottom_region,
+            red_flag_M=red_flag_M,
+            top_mid_basin=top_mid_basin,
         )
 
     def make_highbay_map(
@@ -958,6 +981,12 @@ class GraphCTF(ParallelEnv):
             for neighbor in prune_node_neighbors:
                 if neighbor != post_prune_node: G.add_edge(post_prune_node, neighbor)
 
+        # Hardcoded edge removals — must be after prune loop (pruning node 15→21
+        # would re-create edge (14,21) via node 15's neighbor list).
+        for u, v in [(14, 21), (20, 21)]:
+            if G.has_edge(u, v):
+                G.remove_edge(u, v)
+
         # Passage nodes...
         passage_nodes = [u for u in G.nodes()
                  if choke_row_start <= (u // ny_dim) <= choke_row_end]
@@ -969,23 +998,15 @@ class GraphCTF(ParallelEnv):
         blue_flag = None
         bottom_basin_anchor_node = 33
 
-        # Top basin region computation...
-        top_left_basin_ = set(nx.single_source_shortest_path_length(G, red_flag_L, cutoff=1).keys())
-        top_left_basin = copy.deepcopy(top_left_basin_)
-        for node in top_left_basin_:
-            if node in passage_nodes:
-                top_left_basin.remove(node)
-        top_left_basin = list(top_left_basin)
-
-        top_right_basin_ = set(nx.single_source_shortest_path_length(G, red_flag_R, cutoff=1).keys())
-        top_right_basin = copy.deepcopy(top_right_basin_)
-        for node in top_right_basin_:
-            if node in passage_nodes:
-                top_right_basin.remove(node)
-        top_right_basin = list(top_right_basin)
+        # Red spawn = 1-hop neighbourhood around each flag hypothesis.
+        # No passage-node stripping (all cols open, no real choke wall).
+        top_left_basin  = list(nx.single_source_shortest_path_length(G, red_flag_L,  cutoff=1).keys())
+        top_right_basin = list(nx.single_source_shortest_path_length(G, red_flag_R, cutoff=1).keys())
 
         # Bottom basin region computation...
         bottom_region = set(nx.single_source_shortest_path_length(G, bottom_basin_anchor_node, cutoff=1).keys())
+        bottom_region -= {26, 27}
+        bottom_region.add(35)
         bottom_region = list(bottom_region)
 
 
@@ -1004,7 +1025,7 @@ class GraphCTF(ParallelEnv):
         y_max_highbay = 0
 
         for node_idx, node_pos in pos_dict.items():
-            print("node_idx: {}, node_pos: {}".format(node_idx, node_pos))
+            #print("node_idx: {}, node_pos: {}".format(node_idx, node_pos))
             x_node, y_node = node_pos
 
             x_min = min(x_min, x_node)
@@ -1012,8 +1033,8 @@ class GraphCTF(ParallelEnv):
 
             y_min = min(y_min, y_node)
             y_max = max(y_max, y_node)
-        print("x_min: {}, x_max: {}".format(x_min, x_max))
-        print("y_min: {}, y_max: {}".format(y_min, y_max))
+        #print("x_min: {}, x_max: {}".format(x_min, x_max))
+        #print("y_min: {}, y_max: {}".format(y_min, y_max))
 
         def update_pos(pos):
         # x_new \in [0, 10]
@@ -1041,6 +1062,164 @@ class GraphCTF(ParallelEnv):
             bottom_region=bottom_region,
         )
 
+    def make_3corridor_map(
+        self,
+        seed: int = 30597,
+        nx_dim: int = 10,   # 4 top + 3 choke + 3 bottom
+        ny_dim: int = 11,
+        rho: float = 0.80,
+        ell: float = 3.2,
+        jitter: float = 0.35,
+        choke_row_start: int = 4,
+        choke_row_end: int = 6,
+        top_open_rows: int = 4,          # top rows that are fully open (basins connected across top)
+        left_passage_cols: set = None,   # default: {0, 1, 2}  — 3-wide left corridor
+        center_passage_col: int = 5,     # center of 3-wide center corridor {4,5,6}
+        right_passage_cols: set = None,  # default: {8, 9, 10} — 3-wide right corridor
+        funnel_rows: int = 2,
+    ) -> 'BasinCorridorGraph':
+        """
+        3-basin / 3-corridor variant of the basin-corridor map.
+
+        Top region (rows 0 .. choke_row_start-1) is divided into three separate
+        basins by vertical dividers.  Each basin is connected to the bottom
+        through its own corridor slot in the choke wall:
+
+          Left basin   (cols 0 .. divider_L-1)  <->  left corridor
+          Center basin (cols divider_L+1 .. divider_R-1) <-> center corridor
+          Right basin  (cols divider_R+1 .. ny_dim-1)  <->  right corridor
+
+        Divider columns (blocked in top rows) are placed symmetrically around
+        the center corridor column.
+        """
+        if left_passage_cols is None:
+            left_passage_cols = {0, 1, 2}
+        if right_passage_cols is None:
+            right_passage_cols = {ny_dim - 3, ny_dim - 2, ny_dim - 1}
+
+        # Center passage: 3-wide around center_passage_col
+        center_passage_cols = {center_passage_col - 1, center_passage_col, center_passage_col + 1}
+        all_passages = left_passage_cols | center_passage_cols | right_passage_cols
+
+        # Dividers: single-column walls between passage groups
+        divider_L = max(left_passage_cols) + 1    # e.g. col 3 when left={0,1,2}
+        divider_R = min(right_passage_cols) - 1   # e.g. col 7 when right={8,9,10}
+
+        rng = np.random.default_rng(seed)
+        N = nx_dim * ny_dim
+
+        # Positions
+        pos: Dict[int, np.ndarray] = {}
+        for i in range(nx_dim):
+            for j in range(ny_dim):
+                u = i * ny_dim + j
+                pos[u] = np.array([j + jitter * rng.normal(),
+                                   -i + jitter * rng.normal()], dtype=float)
+
+        # Grid edges (4-connected)
+        edges: List[Tuple[int, int]] = []
+        for i in range(nx_dim):
+            for j in range(ny_dim):
+                u = i * ny_dim + j
+                if i + 1 < nx_dim:
+                    edges.append((u, (i + 1) * ny_dim + j))
+                if j + 1 < ny_dim:
+                    edges.append((u, i * ny_dim + (j + 1)))
+
+        # Correlated random field
+        coords = np.array([[i, j] for i in range(nx_dim) for j in range(ny_dim)], dtype=float)
+        D = np.linalg.norm(coords[:, None] - coords[None], axis=2)
+        Sigma = np.exp(-D / ell) + 1e-6 * np.eye(N)
+        L_chol = np.linalg.cholesky(Sigma)
+        z = L_chol @ rng.standard_normal(N)
+        tau = np.quantile(z, 1 - rho)
+        open_nodes = {u for u in range(N) if z[u] >= tau}
+
+        # ── Choke wall: close everything except passage cols ──────────────────
+        for i in range(choke_row_start, choke_row_end + 1):
+            for j in range(ny_dim):
+                u = i * ny_dim + j
+                if j not in all_passages:
+                    open_nodes.discard(u)
+                else:
+                    open_nodes.add(u)
+
+        # Funnel: guarantee passage cols are open for funnel_rows above/below choke
+        for i in range(max(0, choke_row_start - funnel_rows), choke_row_start):
+            for j in all_passages:
+                open_nodes.add(i * ny_dim + j)
+        for i in range(choke_row_end + 1, min(nx_dim, choke_row_end + 1 + funnel_rows)):
+            for j in all_passages:
+                open_nodes.add(i * ny_dim + j)
+
+        left_cols   = set(range(0, divider_L))
+        center_cols = set(range(divider_L + 1, divider_R))
+        right_cols  = set(range(divider_R + 1, ny_dim))
+
+        # ── Top open band: rows 0..top_open_rows-1 fully open (all basins connected) ──
+        for i in range(0, top_open_rows):
+            for j in range(ny_dim):
+                open_nodes.add(i * ny_dim + j)
+
+        # ── Divided zone: rows top_open_rows..choke_row_start-1 ──────────────
+        # Force basin cols open, divider cols closed → 3 separate sub-graphs
+        for i in range(top_open_rows, choke_row_start):
+            for j in left_cols | center_cols | right_cols:
+                open_nodes.add(i * ny_dim + j)
+            for j in (divider_L, divider_R):
+                open_nodes.discard(i * ny_dim + j)
+
+        # ── Build graph ───────────────────────────────────────────────────────
+        G = nx.Graph()
+        for u in open_nodes:
+            G.add_node(u, pos=pos[u])
+        for u, v in edges:
+            if u in open_nodes and v in open_nodes:
+                G.add_edge(u, v)
+
+        # Largest CC
+        largest_cc = max(nx.connected_components(G), key=len)
+        G = G.subgraph(largest_cc).copy()
+
+        passage_nodes = [u for u in G.nodes()
+                         if choke_row_start <= (u // ny_dim) <= choke_row_end]
+
+        # ── Flag nodes (one per basin) ────────────────────────────────────────
+        # Left flag: top-left corner region
+        red_flag_L = GraphCTF._closest_node_in_G(G, ny_dim, (2, 1)) #GraphCTF._closest_node_in_G(G, ny_dim, (1, 1))
+        # Right flag: top-right corner region
+        red_flag_R = GraphCTF._closest_node_in_G(G, ny_dim, (2, ny_dim - 2)) #GraphCTF._closest_node_in_G(G, ny_dim, (1, ny_dim - 2))
+        # Center flag: top row, center column
+        red_flag_M = GraphCTF._closest_node_in_G(G, ny_dim, (2, center_passage_col)) #GraphCTF._closest_node_in_G(G, ny_dim, (1, center_passage_col))
+
+        # ── Basin regions (BFS from flag, excluding passage nodes) ────────────
+        def _basin(G, flag, cutoff=4):
+            raw = set(nx.single_source_shortest_path_length(G, flag, cutoff=cutoff).keys())
+            return list(raw - set(passage_nodes))
+
+        top_left_basin  = _basin(G, red_flag_L, cutoff=2)
+        top_right_basin = _basin(G, red_flag_R, cutoff=2)
+        top_mid_basin   = _basin(G, red_flag_M, cutoff=2)
+
+        # Blue flag anchor: bottom-center
+        blue_flag_anchor = GraphCTF._closest_node_in_G(G, ny_dim, (nx_dim - 1, ny_dim // 2))
+        bottom_region = list(
+            nx.single_source_shortest_path_length(G, blue_flag_anchor, cutoff=3).keys()
+        )
+
+        return BasinCorridorGraph(
+            G=G,
+            pos=pos,
+            red_flag_L=red_flag_L,
+            red_flag_R=red_flag_R,
+            blue_flag=blue_flag_anchor,
+            top_left_basin=top_left_basin,
+            top_right_basin=top_right_basin,
+            bottom_region=bottom_region,
+            red_flag_M=red_flag_M,
+            top_mid_basin=top_mid_basin,
+        )
+
     def construct_edge_attr(self):
         # Populating edge_attr in the same consistent order...
         G = copy.deepcopy(self.graph)
@@ -1051,7 +1230,7 @@ class GraphCTF(ParallelEnv):
             edge_ft_vec = np.array(node_pos_dict[v]) - np.array(node_pos_dict[u])
             edge_ft_dir = edge_ft_vec / np.linalg.norm(edge_ft_vec)
             edge_ft_len = np.linalg.norm(edge_ft_vec)
-            edge_ft_uv = np.concatenate([edge_ft_dir, [edge_ft_len]])
+            edge_ft_uv = np.concat([edge_ft_dir, [edge_ft_len]])
             edge_features.append(edge_ft_uv)
         edge_features = np.array(edge_features, dtype=np.float32)
         return edge_features
@@ -1067,7 +1246,9 @@ class GraphCTF(ParallelEnv):
             # Basin-corridor graph: use pre-computed flag nodes from make_basin_corridor_medium
             self.red_flag_node = self._bc.red_flag_L           # top-left basin
             self.red_flag_2_node = self._bc.red_flag_R         # top-right basin
-            
+            # 3-flag extension: middle flag — only used when n_flag_hypotheses >= 3
+            self.red_flag_3_node = self._bc.red_flag_M if getattr(self, 'n_flag_hypotheses', 2) >= 3 else None
+
             hardcoded_map = True
             if hardcoded_map:
                 self.blue_flag_node = self._bc.blue_flag
@@ -1077,51 +1258,45 @@ class GraphCTF(ParallelEnv):
 
             self.red_flag_pos = np.array(node_pos_dict[self.red_flag_node])
             self.red_flag_2_pos = np.array(node_pos_dict[self.red_flag_2_node])
+            if self.red_flag_3_node is not None:
+                self.red_flag_3_pos = np.array(node_pos_dict[self.red_flag_3_node])
             self.blue_flag_pos = np.array(node_pos_dict[self.blue_flag_node])
         else:
             # Random-geometric graphs: sample flag positions and snap to closest node
-            if self.highbay_experiment:
-                self.red_flag_node = 7
-                self.red_flag_pos = np.array(node_pos_dict[self.red_flag_node])
+            red_flag_x_lim_left = [2,3] #[1, 2] #[0, 2]
+            red_flag_x_lim_right = [7,8] #[8, 9] #[8, 10]
 
-                self.red_flag_2_node = 10
-                self.red_flag_2_pos = np.array(node_pos_dict[self.red_flag_2_node])
+            red_flag_x_lim, red_flag_y_lim = red_flag_x_lim_left, [9, 10]
+            red_flag_x_lim_2 = red_flag_x_lim_right
+            blue_flag_x_lim, blue_flag_y_lim = [4, 6], [0, 1] # Blue Flag Center.
+            np.random.seed(seed=self.graph_gen_seed+1)
 
-            else:
-                red_flag_x_lim_left = [2,3] #[1, 2] #[0, 2]
-                red_flag_x_lim_right = [7,8] #[8, 9] #[8, 10]
+            red_flag_pos_sampled = (np.random.uniform(*red_flag_x_lim), np.random.uniform(*red_flag_y_lim))
+            red_flag_pos_sampled_2 = (np.random.uniform(*red_flag_x_lim_2), np.random.uniform(*red_flag_y_lim))
+            blue_flag_pos_sampled = (np.random.uniform(*blue_flag_x_lim), np.random.uniform(*blue_flag_y_lim))
 
-                red_flag_x_lim, red_flag_y_lim = red_flag_x_lim_left, [9, 10]
-                red_flag_x_lim_2 = red_flag_x_lim_right
-                blue_flag_x_lim, blue_flag_y_lim = [4, 6], [0, 1] # Blue Flag Center.
-                np.random.seed(seed=self.graph_gen_seed+1)
+            # Closest node to sampled red flag pos...
+            red_flag_node_idx = min(
+                node_pos_dict.items(),
+                key=lambda item: np.linalg.norm(np.array(item[1]) - red_flag_pos_sampled)
+            )[0]
+            self.red_flag_node = red_flag_node_idx
+            self.red_flag_pos = np.array(node_pos_dict[self.red_flag_node])
 
-                red_flag_pos_sampled = (np.random.uniform(*red_flag_x_lim), np.random.uniform(*red_flag_y_lim))
-                red_flag_pos_sampled_2 = (np.random.uniform(*red_flag_x_lim_2), np.random.uniform(*red_flag_y_lim))
-                blue_flag_pos_sampled = (np.random.uniform(*blue_flag_x_lim), np.random.uniform(*blue_flag_y_lim))
+            red_flag_2_node_idx = min(
+                node_pos_dict.items(),
+                key=lambda item: np.linalg.norm(np.array(item[1]) - red_flag_pos_sampled_2)
+            )[0]
+            self.red_flag_2_node = red_flag_2_node_idx
+            self.red_flag_2_pos = np.array(node_pos_dict[self.red_flag_2_node])
 
-                # Closest node to sampled red flag pos...
-                red_flag_node_idx = min(
-                    node_pos_dict.items(),
-                    key=lambda item: np.linalg.norm(np.array(item[1]) - red_flag_pos_sampled)
-                )[0]
-                self.red_flag_node = red_flag_node_idx
-                self.red_flag_pos = np.array(node_pos_dict[self.red_flag_node])
-
-                red_flag_2_node_idx = min(
-                    node_pos_dict.items(),
-                    key=lambda item: np.linalg.norm(np.array(item[1]) - red_flag_pos_sampled_2)
-                )[0]
-                self.red_flag_2_node = red_flag_2_node_idx
-                self.red_flag_2_pos = np.array(node_pos_dict[self.red_flag_2_node])
-
-                # Closest node to sampled blue flag pos...
-                blue_flag_node_idx = min(
-                    node_pos_dict.items(),
-                    key=lambda item: np.linalg.norm(np.array(item[1]) - blue_flag_pos_sampled)
-                )[0]
-                self.blue_flag_node = blue_flag_node_idx
-                self.blue_flag_pos = np.array(node_pos_dict[self.blue_flag_node])
+            # Closest node to sampled blue flag pos...
+            blue_flag_node_idx = min(
+                node_pos_dict.items(),
+                key=lambda item: np.linalg.norm(np.array(item[1]) - blue_flag_pos_sampled)
+            )[0]
+            self.blue_flag_node = blue_flag_node_idx
+            self.blue_flag_pos = np.array(node_pos_dict[self.blue_flag_node])
 
         # Computing valid spawn nodes for Red and Blue...
         red_flag_pos = np.array(node_pos_dict[self.red_flag_node])
@@ -1136,6 +1311,7 @@ class GraphCTF(ParallelEnv):
         assert hasattr(self, '_bc') and self._bc is not None
         self.red_spawn_valid_nodes_L = self._bc.top_left_basin
         self.red_spawn_valid_nodes_R = self._bc.top_right_basin
+        self.red_spawn_valid_nodes_M = (self._bc.top_mid_basin if self._bc.top_mid_basin is not None else []) if getattr(self, 'n_flag_hypotheses', 2) >= 3 else []
 
         self.red_spawn_valid_nodes_just_L = copy.deepcopy(set(self.red_spawn_valid_nodes_L)) - copy.deepcopy(set(self.red_spawn_valid_nodes_R))
         self.red_spawn_valid_nodes_just_L = list(self.red_spawn_valid_nodes_just_L)
@@ -1168,27 +1344,45 @@ class GraphCTF(ParallelEnv):
             if x_lo <= node_pos_dict[n][0] <= x_hi
             and node_pos_dict[n][1] >= y_top_thresh
         ]
-        assert len(self.red_spawn_valid_nodes) >= 2, \
-            f"Red spawn set too small ({len(self.red_spawn_valid_nodes)} nodes). " \
+        assert len(self.red_spawn_valid_nodes) >= self.num_agents_red_team, \
+            f"Red spawn set too small ({len(self.red_spawn_valid_nodes)} nodes for {self.num_agents_red_team} agents). " \
             f"Check graph layout — need nodes in top-1/3 y, mid-1/3 x."
 
         self.blue_spawn_valid_nodes = [
             node for node, pos in node_pos_dict.items()
             if np.linalg.norm(np.array(pos) - blue_flag_pos) <= self.reset_spawn_radius
         ]
+        assert len(self.blue_spawn_valid_nodes) >= self.num_agents_blue_team, \
+            f"Blue spawn set too small ({len(self.blue_spawn_valid_nodes)} nodes for {self.num_agents_blue_team} agents). " \
+            f"Increase reset_spawn_radius or reduce team size."
         """
-        self.red_spawn_valid_nodes = set(self.red_spawn_valid_nodes_L) | set(self.red_spawn_valid_nodes_R)
+        self.red_spawn_valid_nodes = set(self.red_spawn_valid_nodes_L) | set(self.red_spawn_valid_nodes_R) | set(self.red_spawn_valid_nodes_M)
         self.red_spawn_valid_nodes = list(self.red_spawn_valid_nodes)
-        self.blue_spawn_valid_nodes = list(nx.single_source_shortest_path_length(G, self.blue_flag_node, cutoff=3).keys())
+        # Use the map's pre-computed bottom_region when available (avoids BFS
+        # cutoff=3 reaching red territory on small maps like highbay).
+        # For default/3-corridor maps bottom_region == BFS cutoff=3, so no change.
+        if hasattr(self, '_bc') and self._bc is not None and self._bc.bottom_region:
+            self.blue_spawn_valid_nodes = list(self._bc.bottom_region)
+        else:
+            self.blue_spawn_valid_nodes = list(nx.single_source_shortest_path_length(G, self.blue_flag_node, cutoff=3).keys())
 
         # GENERATE FRONTIER NODES FOR ALL FLAG HYPOTHESIS...
         # Compute frontier_nodes and frontier_resolution_mass for node in frontier_nodes...
         self.red_flag_hypothesis = [self.red_flag_node, self.red_flag_2_node]
-        flag_true = 0 # 0 for left, and 1 for right...
+        if getattr(self, 'red_flag_3_node', None) is not None:
+            self.red_flag_hypothesis.append(self.red_flag_3_node)
+        flag_true = 0 # 0 for left, 1 for right, 2 for middle (3-flag)
         self.red_flag_true = self.red_flag_hypothesis[flag_true] #### NOTE: Added on January 2026: update later to support input true_red_flag in environment __init__. Need it for flag sampling and adversarial training.
         num_flags = len(self.red_flag_hypothesis)
-        
-        self.red_flag_reach_sets = [set(self.red_spawn_valid_nodes_L), set(self.red_spawn_valid_nodes_R)]
+
+        reach_sets = [set(self.red_spawn_valid_nodes_L), set(self.red_spawn_valid_nodes_R)]
+        if getattr(self, 'red_flag_3_node', None) is not None:
+            reach_sets.append(set(self.red_spawn_valid_nodes_M))
+        # Highbay: extend frontier beyond 1-hop red spawn without changing spawn pool.
+        if getattr(self, 'map_variant', None) == 'highbay':
+            reach_sets[0] |= {12, 14}
+            reach_sets[1] |= {17, 21}
+        self.red_flag_reach_sets = reach_sets
         flag_reach_dict = {
             flag: self.red_flag_reach_sets[iter_] #set(nx.single_source_shortest_path_length(G, flag, cutoff=self.flag_visibility_max_hops))
             for iter_, flag in enumerate(self.red_flag_hypothesis)
@@ -1216,12 +1410,23 @@ class GraphCTF(ParallelEnv):
 
         # Precompute distance from every node to its nearest Red flag node (multi-source BFS)
         self.dist_to_nearest_red_flag = {node: float('inf') for node in G.nodes()}
-        self.nearest_red_flag = {node: None for node in G.nodes()} # 0 or 1.
+        self.nearest_red_flag = {node: None for node in G.nodes()} # 0, 1, or 2 (3-flag).
         for flag_idx, flag_node in enumerate(self.red_flag_hypothesis):
             for node, d in nx.single_source_shortest_path_length(G, flag_node).items():
                 if d < self.dist_to_nearest_red_flag[node]:
                     self.dist_to_nearest_red_flag[node] = d
                     self.nearest_red_flag[node] = flag_idx
+
+        # Per-hypothesis BFS distances: _dist_from_red_flag_per_hypothesis[fh][node] = dist.
+        # Used by get_observation_v3 so that distance_to_red_flag features always reflect
+        # the ACTIVE episode flag rather than the static flag-0 default in the global
+        # embedding cache (§57 fix).
+        self._dist_from_red_flag_per_hypothesis = [
+            dict(nx.single_source_shortest_path_length(G, flag_node))
+            for flag_node in self.red_flag_hypothesis
+        ]
+        # Default to flag-0 distances; reset() will overwrite with the sampled hypothesis.
+        self._active_red_flag_dist = self._dist_from_red_flag_per_hypothesis[0]
 
         # Precompute BFS distance from every node to the Blue flag (used by defense_zone_tag_bonus).
         self._dist_from_blue_flag = dict(nx.single_source_shortest_path_length(G, self.blue_flag_node))
@@ -1328,6 +1533,7 @@ class GraphCTF(ParallelEnv):
         self.red_flag_true = self.red_flag_hypothesis[flag_idx]
         self._episode_flag_idx = flag_idx  # §41/§42: read by step_wait for per-flag reward routing
         self.is_true_flag_reachable = copy.deepcopy(self.flag_reach_dict[self.red_flag_true])
+        self._active_red_flag_dist = self._dist_from_red_flag_per_hypothesis[flag_idx]  # §57
 
         # Reset opponent policy FSM state if it has one.
         # Pass flag_idx so flag-conditioned opponents (MultiLearnedOpponent) can
@@ -1672,7 +1878,7 @@ class GraphCTF(ParallelEnv):
 
             feat_rel_node_pos_to_agent = np.array(node_pos_dict[node]) - np.array(node_pos_dict[agent_state]) # Not rotation invariant (if the map rotates).
             feat_rel_node_pos_to_home_flag = np.array(node_pos_dict[node]) - home_flag_pos
-            feature = np.concatenate([[feat_agent, feat_flag], feat_rel_node_pos_to_agent, feat_rel_node_pos_to_home_flag, [feat_visibility_bit]])
+            feature = np.concat([[feat_agent, feat_flag], feat_rel_node_pos_to_agent, feat_rel_node_pos_to_home_flag, [feat_visibility_bit]])
             node_feature_matrix[node_idx] = feature
 
         node_feature_matrix = np.array(node_feature_matrix, dtype=np.float32) # shape = (num_nodes, F)
@@ -1820,8 +2026,12 @@ class GraphCTF(ParallelEnv):
             node = agent_local_idx_node_map[ego_node_idx] # Networkx ID in global graph frame.
             node_idx = self.node_to_idx[node] # node_idx is the canonical ID in global graph frame.
             x_ego_idx_cache_data = self.global_embedding_cache[node_idx].copy()
-            # Opponent flag indicator: Red looks for Blue flag, Blue looks for Red flag
-            is_flag_discovered_here = float(node == self.blue_flag_node) if agent_team.startswith('R') else float(node == self.red_flag_true)
+            # Opponent flag indicator: Red looks for Blue flag, Blue looks for Red flag.
+            # For Blue: flag only visible once enemy_flag_known (frontier visit); then always visible.
+            if agent_team.startswith('R'):
+                is_flag_discovered_here = float(node == self.blue_flag_node)
+            else:
+                is_flag_discovered_here = float(node == self.red_flag_true) if self.enemy_flag_known[agent] else 0.0
             if node == agent_node:
                 # Ego-only data...
                 is_ego = 1
@@ -1970,8 +2180,12 @@ class GraphCTF(ParallelEnv):
             node = agent_local_idx_node_map[ego_node_idx]
             node_idx = self.node_to_idx[node]
             x_ego_idx_cache_data = self.global_embedding_cache[node_idx].copy()
-            # Opponent flag indicator: Red looks for Blue flag, Blue looks for Red flag
-            is_flag_discovered_here = float(node == self.blue_flag_node) if agent_team.startswith('R') else float(node == self.red_flag_true)
+            # Opponent flag indicator: Red looks for Blue flag, Blue looks for Red flag.
+            # For Blue: flag only visible once enemy_flag_known (frontier visit); then always visible.
+            if agent_team.startswith('R'):
+                is_flag_discovered_here = float(node == self.blue_flag_node)
+            else:
+                is_flag_discovered_here = float(node == self.red_flag_true) if self.enemy_flag_known[agent] else 0.0
 
             if node == agent_node:
                 is_ego = 1
@@ -2138,11 +2352,12 @@ class GraphCTF(ParallelEnv):
             x_ego_idx_cache_data = self.global_embedding_cache[node_idx].copy()
 
             # --- Per-node features (all nodes get these) ---
-            # Opponent flag indicator: Red looks for Blue flag, Blue looks for Red flag
+            # Opponent flag indicator: Red looks for Blue flag, Blue looks for Red flag.
+            # For Blue: flag only visible once enemy_flag_known (frontier visit); then always visible.
             if agent_team == 'R':
                 is_flag_discovered_here = float(node == self.blue_flag_node)
             else:
-                is_flag_discovered_here = float(node == self.red_flag_true)
+                is_flag_discovered_here = float(node == self.red_flag_true) if self.enemy_flag_known.get(agent, False) else 0.0
             if agent_team == 'R':
                 is_frontier = 0
                 frontier_resolution_mass = 0
@@ -2158,13 +2373,17 @@ class GraphCTF(ParallelEnv):
             structural_degree = x_ego_idx_cache_data[0]
 
             # Per-node flag distances (NEW: computed for ALL nodes, not just ego)
+            # §57: use _active_red_flag_dist (episode-specific) instead of the static
+            # global embedding cache entry [1], which always encodes distance to flag-0
+            # and is wrong whenever a non-left flag hypothesis is active.
+            active_red_flag_dist = self._active_red_flag_dist.get(node, self.graph_diameter) / self.graph_diameter
             if agent_team == 'R':
-                distance_to_home_flag = x_ego_idx_cache_data[1]  # dist to red flag
+                distance_to_home_flag = active_red_flag_dist
                 distance_to_away_flag = x_ego_idx_cache_data[2]  # dist to blue flag
             else:
                 distance_to_home_flag = x_ego_idx_cache_data[2]  # dist to blue flag
                 if self.enemy_flag_known.get(agent, False):
-                    distance_to_away_flag = x_ego_idx_cache_data[1]  # dist to red flag
+                    distance_to_away_flag = active_red_flag_dist
                 else:
                     distance_to_away_flag = 0  # Blue doesn't know flag location yet
 
@@ -2554,41 +2773,59 @@ class GraphCTF(ParallelEnv):
 
         return fig, ax
 
-    def render(self, figname='sim', show_red_flag_frontier=True, flag_hypothesis=0, show_cooridoor=False, show_patrol_region=False, blue_agent_vision=False, **kwargs):
-        assert flag_hypothesis in [0, 1]
-        # First print graph.
-        # Then print all agents.
-        # Then plot all agent circles.
-
+    def render(self, figname='sim', show_red_flag_frontier=True, flag_hypothesis=0, discovery_mode=False, show_cooridoor=False, show_patrol_region=False, blue_agent_vision=False, **kwargs):
+        # discovery_mode=True: show both flag hypotheses; false flag disappears once Blue discovers true flag.
+        # discovery_mode=False (default): show single flag controlled by flag_hypothesis.
+        assert 0 <= flag_hypothesis < len(self.red_flag_hypothesis)
         from matplotlib.offsetbox import OffsetImage, AnnotationBbox
         fig, ax = GraphCTF.draw_graph(self.graph)
         pos = nx.get_node_attributes(self.graph, 'pos')
-    
-        blue_flag_img_path="flag_imgs/blue_flag.png"
-        red_flag_img_path="flag_imgs/red_flag.png"
-        blue_flag_node = self.blue_flag_node
-        red_flag_node = [self.red_flag_node, self.red_flag_2_node][flag_hypothesis]
-        #red_flag_node_2 = red_flag_2_node
-        
-        blue_flag_loc, red_flag_loc = pos[blue_flag_node], pos[red_flag_node]
+
+        blue_flag_img_path = "flag_imgs/blue_flag.png"
+        red_flag_img_path  = "flag_imgs/red_flag.png"
+        blue_flag_node     = self.blue_flag_node
+
+        # ── Blue flag ──────────────────────────────────────────────────────────
+        blue_flag_loc = pos[blue_flag_node]
         if blue_flag_loc is not None and self.game_mode != 'half':
             blue_flag_img = mpimg.imread(blue_flag_img_path)
             blue_flag_img = OffsetImage(blue_flag_img, zoom=0.12)
-            ab_blue = AnnotationBbox(blue_flag_img, blue_flag_loc, frameon=False)
-            ax.add_artist(ab_blue)
+            ax.add_artist(AnnotationBbox(blue_flag_img, blue_flag_loc, frameon=False))
 
-        if red_flag_loc is not None:
-            red_flag_img = mpimg.imread(red_flag_img_path)
-            red_flag_img = OffsetImage(red_flag_img, zoom=0.12)
-            ab_red = AnnotationBbox(red_flag_img, red_flag_loc, frameon=False)
-            ax.add_artist(ab_red)
+        # ── Red flag(s) ────────────────────────────────────────────────────────
+        _basin_for = lambda node: (
+            self._bc.top_left_basin if node == self._bc.red_flag_L else self._bc.top_right_basin
+        )
+
+        FALSE_FLAG_ALPHA = 0.45   # icon opacity for unconfirmed flag hypothesis
+
+        if discovery_mode:
+            # Show all hypotheses; collapse to true flag once any Blue agent has discovered it.
+            # Before discovery: true flag full opacity, false flag icon ghosted.
+            discovered = (hasattr(self, 'enemy_flag_known') and
+                          any(self.enemy_flag_known.get(a, False) for a in self.blue_team_agents))
+            if discovered:
+                flags_alphas  = [(self.red_flag_true, 1.0)]
+                basins_to_show = [_basin_for(self.red_flag_true)]
+            else:
+                flags_alphas  = [(f, 1.0 if f == self.red_flag_true else FALSE_FLAG_ALPHA)
+                                 for f in self.red_flag_hypothesis]
+                basins_to_show = [_basin_for(f) for f in self.red_flag_hypothesis]
+        else:
+            red_flag_node  = self.red_flag_hypothesis[flag_hypothesis]
+            flags_alphas   = [(red_flag_node, 1.0)]
+            basins_to_show = [_basin_for(red_flag_node)]
+
+        for flag_node, alpha in flags_alphas:
+            flag_loc = pos[flag_node]
+            if flag_loc is not None:
+                red_flag_img = OffsetImage(mpimg.imread(red_flag_img_path), zoom=0.12, alpha=alpha)
+                ax.add_artist(AnnotationBbox(red_flag_img, flag_loc, frameon=False))
 
         if show_red_flag_frontier:
-            k = self.flag_visibility_max_hops
-            khop_nodes = nx.single_source_shortest_path_length(self.graph, red_flag_node, cutoff=k).keys()
-            khop_nodes = self._bc.top_left_basin # Added on March 7, 2026 for new map.
-            for khop_node in khop_nodes:
-                ax.scatter(*pos[khop_node], color="yellow", s=35, zorder=6)
+            for basin in basins_to_show:
+                for node in basin:
+                    ax.scatter(*pos[node], color="yellow", s=35, zorder=6)
 
         """
         # NOTE: self._bc_info not implemented.
@@ -2748,13 +2985,13 @@ class GraphCTF(ParallelEnv):
     Custom ActorCriticPolicy by SB3: takes in batched obs from the VecEnv wrapper and returns batched actions, log_probs and values.
     """
 
-# from graphpolicy import GraphPolicy
+from graphpolicy import GraphPolicy
 class GraphCoopEnv(ParallelEnv): #CoopEnv_v0 with policy_paths instead of policies.
     """
     This class inherits from ParallelEnv and provides a Cooperative environment with the opponent team policy fixed (as given by the input PolicySet) in the MixedCompCoop setting (the Capture-the-Flag environment).
     GOAL: This class should pass the ParallelEnv API test and should be a valid ParallelEnv class.
     """
-    def __init__(self, MixedCompCoop, verbose=False, seed=None):
+    def __init__(self, MixedCompCoop, Policy: GraphPolicy, verbose=False, seed=None):
         from stable_baselines3 import PPO
         import numpy as np
         
@@ -3471,11 +3708,14 @@ class GraphParallelEnvToSB3VecEnv_MAPPO(GraphParallelEnvToSB3VecEnv_v1):
                          if a.startswith(active_team[0])]
         n_active = len(active_agents)
 
-        # Build _teammate_idx_map and _agent_local_id using loop indices 0..n-1.
-        # _stack_agent_obs loops `for i in range(n_active)`, so keys must be
-        # those indices — not positions inside possible_agents.
-        self._teammate_idx_map = {i: (i + 1) % n_active for i in range(n_active)}
-        self._agent_local_id   = {i: i for i in range(n_active)}
+        # For each agent i, _teammate_indices[i] is the stable ordered list of
+        # the other agents' local indices (all j != i, ascending).
+        n_teammates = n_active - 1
+        self._teammate_indices = {
+            i: [j for j in range(n_active) if j != i]
+            for i in range(n_active)
+        }
+        self._agent_local_id = {i: i for i in range(n_active)}
 
         # Fix num_agents / num_envs / agents_flat at construction time so that
         # VecNormalize and the PPO rollout buffer always see the right sizes,
@@ -3489,39 +3729,60 @@ class GraphParallelEnvToSB3VecEnv_MAPPO(GraphParallelEnvToSB3VecEnv_v1):
             for agent_idx in range(n_active)
         ]
 
-        # Extend observation_space with teammate_* keys + agent_id
+        # Extend observation_space with teammate_{t}_* keys + agent_id.
+        # Each agent gets n_teammates indexed slots (t = 0 .. n_teammates-1).
         from gymnasium.spaces import Dict as GymDict, Box as GymBox
         base  = self.observation_space
-        extra = {
-            f'teammate_{k}': base.spaces[k]
-            for k in _TEAMMATE_COPY_KEYS
-            if k in base.spaces
-        }
-        extra['agent_id'] = GymBox(low=0, high=1, shape=(1,), dtype=np.int64)
+        extra = {}
+        for t in range(n_teammates):
+            for k in _TEAMMATE_COPY_KEYS:
+                if k in base.spaces:
+                    extra[f'teammate_{t}_{k}'] = base.spaces[k]
+            extra[f'teammate_{t}_agent_id'] = GymBox(
+                low=0, high=n_active - 1, shape=(1,), dtype=np.int64
+            )
+        extra['agent_id'] = GymBox(low=0, high=n_active - 1, shape=(1,), dtype=np.int64)
         self.observation_space = GymDict({**base.spaces, **extra})
 
     def _stack_agent_obs(self, obs_dict, agents):
         """
         Calls the base stacker then injects teammate observations and agent_id.
 
-        The base class returns stacked[key] with shape [n, ...] where index i
-        corresponds to the agent at position i in `agents` (= possible_agents).
-        We copy each key from the teammate's slot to produce teammate_{key}.
+        For N active agents, each agent i gets N-1 indexed teammate slots:
+          teammate_0_*, teammate_1_*, ...
+        where slot t contains the obs of self._teammate_indices[i][t].
+        Also injects teammate_{t}_agent_id for GRU routing in the critic.
         """
         stacked = super()._stack_agent_obs(obs_dict, agents)
         n = len(agents)
+        n_teammates = n - 1
 
-        # Inject teammate observations
-        for key in _TEAMMATE_COPY_KEYS:
-            if key not in stacked:
-                continue
-            src    = stacked[key]  # [n, ...]
-            tm_arr = np.empty_like(src)
-            for i in range(n):
-                tm_arr[i] = src[self._teammate_idx_map.get(i, (i + 1) % n)]
-            stacked[f'teammate_{key}'] = tm_arr
+        for t in range(n_teammates):
+            for key in _TEAMMATE_COPY_KEYS:
+                if key not in stacked:
+                    continue
+                src    = stacked[key]  # [n, ...]
+                tm_arr = np.empty_like(src)
+                for i in range(n):
+                    # Active-team agents have a proper teammate list; non-active
+                    # agents (e.g. Red when training Blue) fall back to the next
+                    # agent cyclically — their obs are unused by the learner.
+                    tm_idx = (self._teammate_indices[i][t]
+                              if i in self._teammate_indices and t < len(self._teammate_indices[i])
+                              else (i + 1) % n)
+                    tm_arr[i] = src[tm_idx]
+                stacked[f'teammate_{t}_{key}'] = tm_arr
 
-        # Inject team-local agent id
+            # teammate's local agent-id — needed by critic GRU routing
+            stacked[f'teammate_{t}_agent_id'] = np.array(
+                [[self._teammate_indices[i][t]
+                  if i in self._teammate_indices and t < len(self._teammate_indices[i])
+                  else (i + 1) % n]
+                 for i in range(n)],
+                dtype=np.int64
+            )
+
+        # Ego agent id
         stacked['agent_id'] = np.array(
             [[self._agent_local_id.get(i, 0)] for i in range(n)],
             dtype=np.int64
@@ -7992,10 +8253,7 @@ def check_valid_Policy(Policy):
         assert abs(np.sum(Policy["policy"]["weights"]) - 1.) <= 1e-8 #np.sum(Policy["policy"]["weights"]) == 1.
     return
 
-try:
-    from train import *
-except ImportError:
-    pass  # train and its deps are training-only; not needed for inference on the rover
+from train import *
 def BestResponse_v2(env_constructor, env_seed, env_args, env_kwargs, num_vec_envs, Policy, device=None, num_million=2, load_path=None, model_save_path=None, br_seed=None, eval_env_bool=True, hyperparams={}, **kwargs):
     """
     Policy basic implementation is to serve as a placeholder for a single policy for an agent. Here, "str" is the agent / team ID for the CustomCTF_v0 / MixedCompCoop environment.
