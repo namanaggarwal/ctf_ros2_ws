@@ -20,7 +20,7 @@ class PublishBoxes(Node):
         self.box_poses = {}
 
         # number of boxes
-        self.num_boxes = 6
+        self.num_boxes = 5
 
         # create subscribers
         for i in range(self.num_boxes):
@@ -40,7 +40,7 @@ class PublishBoxes(Node):
         self.big_box_poses = {}
 
         # number of boxes
-        self.num_big_boxes = 2
+        self.num_big_boxes = 7
 
         # create subscribers
         for i in range(self.num_big_boxes):

@@ -79,6 +79,7 @@ class GameServer(Node):
             fixed_flag_hypothesis=1,
             obs_version=3,
             seed=self._seed,
+            map_variant="highbay"
         )
         self.get_logger().info("GraphCTF environment initialised for spawn generation.")
 
