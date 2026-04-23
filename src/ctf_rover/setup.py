@@ -18,7 +18,6 @@ setup(
         ]),
         ('share/' + package_name + '/policies', [
             'policies/iter1_blue_br_minmaxregret_best.zip',
-            'policies/GNN_PPO_RedBR_opp_fh1_flag_uniform.zip',
         ]),
     ],
     install_requires=['setuptools'],
