@@ -1,5 +1,5 @@
 rover_node:
   ros__parameters:
     team: "RED"
-    policy_zip_path: "/ros2_ws/install/ctf_rover/share/ctf_rover/policies/GNN_PPO_RedBR_Highbay_fh0.zip"
+    policy_zip_path: "/home/swarm/code/ctf_ros2_ws/install/ctf_rover/share/ctf_rover/policies/GNN_PPO_RedBR_Highbay_fh0.zip"
     arrival_tolerance: 0.5  # metres
