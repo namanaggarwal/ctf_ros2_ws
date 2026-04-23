@@ -1230,7 +1230,7 @@ class GraphCTF(ParallelEnv):
             edge_ft_vec = np.array(node_pos_dict[v]) - np.array(node_pos_dict[u])
             edge_ft_dir = edge_ft_vec / np.linalg.norm(edge_ft_vec)
             edge_ft_len = np.linalg.norm(edge_ft_vec)
-            edge_ft_uv = np.concat([edge_ft_dir, [edge_ft_len]])
+            edge_ft_uv = np.concatenate([edge_ft_dir, [edge_ft_len]])
             edge_features.append(edge_ft_uv)
         edge_features = np.array(edge_features, dtype=np.float32)
         return edge_features
@@ -1878,7 +1878,7 @@ class GraphCTF(ParallelEnv):
 
             feat_rel_node_pos_to_agent = np.array(node_pos_dict[node]) - np.array(node_pos_dict[agent_state]) # Not rotation invariant (if the map rotates).
             feat_rel_node_pos_to_home_flag = np.array(node_pos_dict[node]) - home_flag_pos
-            feature = np.concat([[feat_agent, feat_flag], feat_rel_node_pos_to_agent, feat_rel_node_pos_to_home_flag, [feat_visibility_bit]])
+            feature = np.concatenate([[feat_agent, feat_flag], feat_rel_node_pos_to_agent, feat_rel_node_pos_to_home_flag, [feat_visibility_bit]])
             node_feature_matrix[node_idx] = feature
 
         node_feature_matrix = np.array(node_feature_matrix, dtype=np.float32) # shape = (num_nodes, F)
@@ -2985,13 +2985,13 @@ class GraphCTF(ParallelEnv):
     Custom ActorCriticPolicy by SB3: takes in batched obs from the VecEnv wrapper and returns batched actions, log_probs and values.
     """
 
-from graphpolicy import GraphPolicy
+# from graphpolicy import GraphPolicy
 class GraphCoopEnv(ParallelEnv): #CoopEnv_v0 with policy_paths instead of policies.
     """
     This class inherits from ParallelEnv and provides a Cooperative environment with the opponent team policy fixed (as given by the input PolicySet) in the MixedCompCoop setting (the Capture-the-Flag environment).
     GOAL: This class should pass the ParallelEnv API test and should be a valid ParallelEnv class.
     """
-    def __init__(self, MixedCompCoop, Policy: GraphPolicy, verbose=False, seed=None):
+    def __init__(self, MixedCompCoop, Policy, verbose=False, seed=None):
         from stable_baselines3 import PPO
         import numpy as np
         
@@ -8253,7 +8253,7 @@ def check_valid_Policy(Policy):
         assert abs(np.sum(Policy["policy"]["weights"]) - 1.) <= 1e-8 #np.sum(Policy["policy"]["weights"]) == 1.
     return
 
-from train import *
+# from train import *
 def BestResponse_v2(env_constructor, env_seed, env_args, env_kwargs, num_vec_envs, Policy, device=None, num_million=2, load_path=None, model_save_path=None, br_seed=None, eval_env_bool=True, hyperparams={}, **kwargs):
     """
     Policy basic implementation is to serve as a placeholder for a single policy for an agent. Here, "str" is the agent / team ID for the CustomCTF_v0 / MixedCompCoop environment.
