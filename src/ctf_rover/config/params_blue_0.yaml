@@ -1,6 +1,5 @@
 rover_node:
   ros__parameters:
     team: "BLUE"
-    # Path after `colcon build`: $(ros2 pkg prefix ctf_rover)/share/ctf_rover/policies/iter1_blue_br_minmaxregret_best.zip
-    policy_zip_path: "/home/swarm/code/ctf_ros2_ws/install/ctf_rover/share/ctf_rover/policies/iter1_blue_br_minmaxregret_best.zip"
+    policy_zip_path: "/ros2_ws/install/ctf_rover/share/ctf_rover/policies/iter1_bay_blue_br.zip"
     arrival_tolerance: 0.5  # metres
