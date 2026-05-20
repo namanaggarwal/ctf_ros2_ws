@@ -6,7 +6,6 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
-        - /TF1/Frames1
         - /RR03 Traj1/Topic1
         - /RR03 Odom1/Shape1
         - /RR04 Odom1/Shape1
@@ -15,7 +14,7 @@ Panels:
         - /RR03 Step Text1/Topic1
         - /RR03 Step Text1/Namespaces1
       Splitter Ratio: 0.5
-    Tree Height: 1294
+    Tree Height: 727
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
@@ -33,7 +32,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: RR01 Occupancy Grid
 Visualization Manager:
   Class: ""
   Displays:
@@ -55,6 +54,13 @@ Visualization Manager:
       Plane Cell Count: 10
       Reference Frame: <Fixed Frame>
       Value: true
+    - Class: rviz_default_plugins/Axes
+      Enabled: false
+      Length: 0.5
+      Name: RR01 Axes
+      Radius: 0.10000000149011612
+      Reference Frame: RR01
+      Value: false
     - Class: rviz_default_plugins/Axes
       Enabled: false
       Length: 0.5
@@ -89,6 +95,40 @@ Visualization Manager:
       Name: RR08 Axes
       Radius: 0.10000000149011612
       Reference Frame: RR08
+      Value: false
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: Intensity
+      Decay Time: 0
+      Enabled: false
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: RR01 Occupancy Grid
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.05000000074505806
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /RR01/occupancy_grid
+      Use Fixed Frame: true
+      Use rainbow: true
       Value: false
     - Alpha: 1
       Autocompute Intensity Bounds: true
@@ -265,73 +305,27 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: false
-        BIGBOX0:
-          Value: false
-        BIGBOX1:
-          Value: false
-        BOX0:
-          Value: false
-        BOX1:
-          Value: false
-        BOX2:
-          Value: false
-        BOX3:
-          Value: false
-        BOX4:
-          Value: false
-        BOX5:
-          Value: false
-        RR04:
+        RR01:
           Value: true
-        RR04/base_link:
-          Value: false
-        RR04/lidar:
-          Value: false
-        RR04/livox_frame:
-          Value: false
-        RR04/map:
-          Value: false
-        RR04/sensor_tower:
-          Value: false
-        RR04_d435_link:
-          Value: false
-        RR04_d455_link:
-          Value: false
+        RR01/base_link:
+          Value: true
+        RR01/lidar:
+          Value: true
+        RR01/map:
+          Value: true
         RR06:
           Value: true
         RR06/base_link:
-          Value: false
-        RR06/lidar:
-          Value: false
-        RR06/livox_frame:
-          Value: false
-        RR06/map:
-          Value: false
-        RR06/sensor_tower:
-          Value: false
-        RR06_d435_link:
-          Value: false
-        RR06_d455_link:
-          Value: false
-        RR08:
           Value: true
-        RR08/base_link:
-          Value: false
-        RR08/lidar:
-          Value: false
-        RR08/livox_frame:
-          Value: false
-        RR08/map:
-          Value: false
-        RR08/sensor_tower:
-          Value: false
-        RR08_d435_link:
-          Value: false
-        RR08_d455_link:
-          Value: false
+        RR06/livox_frame:
+          Value: true
+        RR06/sensor_tower:
+          Value: true
+        RR06_d435_link:
+          Value: true
+        RR06_d455_link:
+          Value: true
         sim:
-          Value: false
-        vasudrone:
           Value: false
         world:
           Value: false
@@ -342,86 +336,34 @@ Visualization Manager:
       Show Names: true
       Tree:
         world:
-          BIGBOX0:
-            {}
-          BIGBOX1:
-            {}
-          BOX0:
-            {}
-          BOX1:
-            {}
-          BOX2:
-            {}
-          BOX3:
-            {}
-          BOX4:
-            {}
-          BOX5:
-            {}
-          RR04:
-            RR04/base_link:
-              RR04/lidar:
+          RR01:
+            RR01/base_link:
+              RR01/lidar:
                 {}
-              RR04/livox_frame:
-                {}
-              RR04/sensor_tower:
-                {}
-              RR04_d435_link:
-                {}
-              RR04_d455_link:
-                {}
-          RR04/map:
+          RR01/map:
             {}
           RR06:
-            RR06/base_link:
-              RR06/lidar:
-                {}
-              RR06/livox_frame:
-                {}
-              RR06/sensor_tower:
-                {}
-              RR06_d435_link:
-                {}
-              RR06_d455_link:
-                {}
-          RR06/map:
-            {}
-          RR08:
-            RR08/base_link:
-              RR08/lidar:
-                {}
-              RR08/livox_frame:
-                {}
-              RR08/sensor_tower:
-                {}
-              RR08_d435_link:
-                {}
-              RR08_d455_link:
-                {}
-          RR08/map:
             {}
           sim:
-            {}
-          vasudrone:
             {}
       Update Interval: 0
       Value: true
     - Class: rviz_default_plugins/Axes
-      Enabled: true
+      Enabled: false
       Length: 1
       Name: World Axes
       Radius: 0.10000000149011612
       Reference Frame: world
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Axes
-      Enabled: true
+      Enabled: false
       Length: 1
       Name: Sim Axes
       Radius: 0.10000000149011612
       Reference Frame: sim
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Marker
-      Enabled: false
+      Enabled: true
       Name: Initial Pose
       Namespaces:
         {}
@@ -432,7 +374,19 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /initial_pose_marker
-      Value: false
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: RR01 Traj
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /RR01/traj_committed_colored
+      Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: RR03 Traj
@@ -449,7 +403,7 @@ Visualization Manager:
       Enabled: true
       Name: RR04 Traj
       Namespaces:
-        state_vec: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -473,7 +427,7 @@ Visualization Manager:
       Enabled: true
       Name: RR06 Traj
       Namespaces:
-        state_vec: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -485,7 +439,7 @@ Visualization Manager:
       Enabled: true
       Name: RR08 Traj
       Namespaces:
-        state_vec: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -493,6 +447,45 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /RR08/traj_committed_colored
       Value: true
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz_default_plugins/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: true
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 204; 51; 204
+          Scale: 1
+          Value: true
+        Value: true
+      Enabled: false
+      Keep: 1
+      Name: RR01 Odom
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1
+        Axes Length: 1
+        Axes Radius: 0.10000000149011612
+        Color: 255; 25; 0
+        Head Length: 0.30000001192092896
+        Head Radius: 0.4000000059604645
+        Shaft Length: 0.5
+        Shaft Radius: 0.20000000298023224
+        Value: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /RR01/dlio/odom_node/odom
+      Value: false
     - Angle Tolerance: 0.10000000149011612
       Class: rviz_default_plugins/Odometry
       Covariance:
@@ -693,6 +686,21 @@ Visualization Manager:
       Color: 204; 41; 204
       Enabled: false
       History Length: 1
+      Name: RR01 Point G
+      Radius: 0.20000000298023224
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /RR01/point_G
+      Value: false
+    - Alpha: 1
+      Class: rviz_default_plugins/PointStamped
+      Color: 204; 41; 204
+      Enabled: false
+      History Length: 1
       Name: RR03 Point G
       Radius: 0.20000000298023224
       Topic:
@@ -753,6 +761,21 @@ Visualization Manager:
       Color: 224; 27; 36
       Enabled: true
       History Length: 1
+      Name: RR01 G Term
+      Radius: 0.20000000298023224
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /RR01/point_G_term
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/PointStamped
+      Color: 224; 27; 36
+      Enabled: true
+      History Length: 1
       Name: RR03 G Term
       Radius: 0.20000000298023224
       Topic:
@@ -777,6 +800,21 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /RR04/point_G_term
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/PointStamped
+      Color: 224; 27; 36
+      Enabled: true
+      History Length: 1
+      Name: RR05 G Term
+      Radius: 0.20000000298023224
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /RR05/point_G_term
       Value: true
     - Alpha: 1
       Class: rviz_default_plugins/PointStamped
@@ -808,6 +846,26 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /RR08/point_G_term
       Value: true
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.10000000149011612
+      Class: rviz_default_plugins/Pose
+      Color: 255; 25; 0
+      Enabled: false
+      Head Length: 0.30000001192092896
+      Head Radius: 0.10000000149011612
+      Name: RR01 Term Goal
+      Shaft Length: 1
+      Shaft Radius: 0.05000000074505806
+      Shape: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /RR01/term_goal
+      Value: false
     - Alpha: 1
       Axes Length: 1
       Axes Radius: 0.10000000149011612
@@ -892,8 +950,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        ctf_flag: true
-        ctf_graph_nodes: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -943,6 +1000,19 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/Marker
       Enabled: true
+      Name: RR01 Step Text
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /RR01/text
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
       Name: RR03 Step Text
       Namespaces:
         {}
@@ -958,7 +1028,7 @@ Visualization Manager:
       Enabled: true
       Name: RR04 Step Text
       Namespaces:
-        RR04_text: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -969,9 +1039,22 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/Marker
       Enabled: true
+      Name: RR05 Step Text
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /RR05/text
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
       Name: RR06 Step Text
       Namespaces:
-        RR06_text: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -984,7 +1067,7 @@ Visualization Manager:
       Enabled: true
       Name: RR08 Step Text
       Namespaces:
-        RR08_text: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -997,7 +1080,7 @@ Visualization Manager:
       Enabled: true
       Name: CLOCK Text
       Namespaces:
-        server_text: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -1010,7 +1093,7 @@ Visualization Manager:
       Enabled: true
       Name: Flag Discovered
       Namespaces:
-        flag_discovered: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -1065,33 +1148,33 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 15.067794799804688
+      Distance: 17.0761775970459
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.47907155752182007
-        Y: -0.4719710946083069
-        Z: -0.8946360945701599
+        X: -0.1919962614774704
+        Y: -0.8332189917564392
+        Z: -1.1762558221817017
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5697963237762451
+      Pitch: 1.089796781539917
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 4.64850378036499
+      Yaw: 4.733520030975342
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: true
-  Height: 1583
+  Height: 1016
   Hide Left Dock: true
   Hide Right Dock: true
-  QMainWindow State: 000000ff00000000fd00000004000000000000028800000591fc0200000008fb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073000000003d00000591000000c900fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261000000010000010f000002d6fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000003d000002d6000000a400fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000007160000003efc0100000002fb0000000800540069006d0065010000000000000716000002fb00fffffffb0000000800540069006d00650100000000000004500000000000000000000007160000059100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000400000000000002880000035afc0200000008fb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073000000003d0000035a000000c900fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261000000010000010f000002d6fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000003d000002d6000000a400fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e100000197000000030000039d0000003efc0100000002fb0000000800540069006d006501000000000000039d000002fb00fffffffb0000000800540069006d006501000000000000045000000000000000000000039d0000035a00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Selection:
     collapsed: false
   Time:
@@ -1100,6 +1183,6 @@ Window Geometry:
     collapsed: false
   Views:
     collapsed: true
-  Width: 1814
-  X: 2026
-  Y: 419
+  Width: 925
+  X: 1620
+  Y: 2187
