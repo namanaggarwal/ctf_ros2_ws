@@ -71,8 +71,8 @@ class GameServer(Node):
         self.num_agents_blue_team = 0
         self.num_agents_red_team = 0
 
-        self.ctf_red_agents = ['Red_0', 'Red_1']
-        self.ctf_blue_agents = ['Blue_0', 'Blue_1']
+        self.ctf_red_agents = ['Red_0', 'Red_1', 'Red_2']
+        self.ctf_blue_agents = ['Blue_0', 'Blue_1', 'Blue_2']
         self.rr_to_ctf_agent_map = {}
 
         # GraphCTF env — used for spawn position generation only (env.step() never called)
