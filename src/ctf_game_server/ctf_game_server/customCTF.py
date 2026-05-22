@@ -427,6 +427,8 @@ class GraphCTF(ParallelEnv):
             self.num_agents_blue_team = 1
         elif ctf_player_config == "2v2":
             self.num_agents_blue_team = 2
+        elif ctf_player_config == "3v3":
+            self.num_agents_blue_team = 3
         self.num_agents_red_team = self.num_agents_blue_team
 
         self.blue_team_agents = ["Blue_" + "{}".format(i) for i in range(self.num_agents_blue_team)]
@@ -3564,6 +3566,8 @@ class CustomCTF_v0(ParallelEnv): # v0: HOMOGENOUS OBSERVATION SPACES FOR RED AND
             self.num_agents_blue_team = 1
         elif ctf_player_config == "2v2":
             self.num_agents_blue_team = 2
+        elif ctf_player_config == "3v3":
+            self.num_agents_blue_team = 3
         self.num_agents_red_team = self.num_agents_blue_team
         self.num_agents = self.num_agents()
 
@@ -4188,6 +4192,8 @@ class CustomCTF_v1(ParallelEnv): # v1: HETEROGENOUS OBSERVATION SPACES FOR RED A
             self.num_agents_blue_team = 1
         elif ctf_player_config == "2v2":
             self.num_agents_blue_team = 2
+        elif ctf_player_config == "3v3":
+            self.num_agents_blue_team = 3
         self.num_agents_red_team = self.num_agents_blue_team
         self.num_agents = self.num_agents()
 
@@ -5067,6 +5073,8 @@ class CustomCTF_v2(ParallelEnv): # v2: v1 + agent_deaths (max_respawns).
             self.num_agents_blue_team = 1
         elif ctf_player_config == "2v2":
             self.num_agents_blue_team = 2
+        elif ctf_player_config == "3v3":
+            self.num_agents_blue_team = 3
         self.num_agents_red_team = self.num_agents_blue_team
         self.num_agents = self.num_agents()
 
@@ -5724,6 +5732,8 @@ class DefenseCTF(ParallelEnv):
             self.num_agents_blue_team = 1
         elif ctf_player_config == "2v2":
             self.num_agents_blue_team = 2
+        elif ctf_player_config == "3v3":
+            self.num_agents_blue_team = 3
         self.num_agents_red_team = self.num_agents_blue_team
         self.num_agents = self.num_agents()
 
@@ -6503,6 +6513,8 @@ class DefenseCTF_v2(ParallelEnv):
             self.num_agents_blue_team = 1
         elif ctf_player_config == "2v2":
             self.num_agents_blue_team = 2
+        elif ctf_player_config == "3v3":
+            self.num_agents_blue_team = 3
         self.num_agents_red_team = self.num_agents_blue_team
         self.num_agents = self.num_agents()
 
