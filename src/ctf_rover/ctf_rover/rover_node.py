@@ -40,6 +40,7 @@ class RoverNode(Node):
         # ROS parameters
         self.declare_parameter("team", "RED")
         self.declare_parameter("policy_zip_path", "")
+        self.declare_parameter("acl_graph_pkl_path", "")
         self.declare_parameter("arrival_tolerance", 0.5)
         self.declare_parameter("tag_radius", 0.55)
         self.declare_parameter("tag_angle_tolerance", 0.785)  # ~45 degrees
@@ -110,6 +111,9 @@ class RoverNode(Node):
         self.policy_ready = False
         self.current_node_idx = None
         self.goal_node_idx = None
+        # ACL navigation graph (optional; loaded in _init_policy if acl_graph_pkl_path set)
+        self._acl_positions = None   # [N, 2] Vicon metres
+        self._acl_goal_vicon = None  # Vicon position of current physical goal
         # Prevents re-triggering policy_step until the rover physically departs the goal area.
         # Set True after every policy_step(); cleared once dist to goal > arrival_tolerance.
         self._waiting_to_depart = False
@@ -299,6 +303,7 @@ class RoverNode(Node):
             spawn_sim = self._vicon_to_sim(np.array([p.x, p.y]))
             self.current_node_idx = self._nearest_node_idx(spawn_sim)
             self.goal_node_idx = self.current_node_idx
+            self._acl_goal_vicon = np.array([p.x, p.y])
             self.get_logger().info(f"[ROVER] Spawn node idx={self.current_node_idx}")
 
         elif command == "RESPAWN":
@@ -329,6 +334,7 @@ class RoverNode(Node):
             # Update goal so arrival detection fires at the respawn node.
             spawn_sim = self._vicon_to_sim(np.array([p.x, p.y]))
             self.goal_node_idx = self._nearest_node_idx(spawn_sim)
+            self._acl_goal_vicon = np.array([p.x, p.y])
             self._waiting_to_depart = False
             self.get_logger().info(
                 f"[ROVER] Navigating to respawn node idx={self.goal_node_idx} "
@@ -354,6 +360,7 @@ class RoverNode(Node):
 
         from customCTF import GraphCTF
         from graph_policy import LearnedPolicyWrapper
+        from graph_generator import load_acl_graph
 
         self.get_logger().info("Initialising GraphCTF environment…")
         self.env = GraphCTF(
@@ -366,6 +373,16 @@ class RoverNode(Node):
             f"GraphCTF ready: {self.env.num_nodes} nodes, "
             f"max_degree={self.env.max_degree}, diameter={self.env.graph_diameter}"
         )
+
+        pkl_path = self.get_parameter("acl_graph_pkl_path").value
+        if pkl_path:
+            acl_g = load_acl_graph(pkl_path)
+            self._acl_positions = np.array(
+                [[d['x'], d['y']] for _, d in acl_g.nodes(data=True)]
+            )
+            self.get_logger().info(
+                f"ACL navigation graph loaded: {len(self._acl_positions)} nodes"
+            )
 
         zip_path = self.get_parameter("policy_zip_path").value
         self.get_logger().info(f"Loading policy from {zip_path}…")
@@ -384,6 +401,11 @@ class RoverNode(Node):
     def _sim_to_vicon(self, sim_xy: np.ndarray) -> np.ndarray:
         """Sim [x, y] (graph units) → Vicon [x, y] (metres)."""
         return _R_SIM_TO_VICON @ sim_xy + _T_VICON
+
+    def _nearest_acl_vicon(self, vicon_xy: np.ndarray) -> np.ndarray:
+        """Return Vicon [x, y] of the nearest ACL graph node to vicon_xy."""
+        dists = np.linalg.norm(self._acl_positions - vicon_xy, axis=1)
+        return self._acl_positions[np.argmin(dists)]
 
     # ------------------------------------------------------------------
     # Nearest graph node lookup
@@ -415,9 +437,12 @@ class RoverNode(Node):
         if self.goal_node_idx is None:
             return
 
-        goal_node = self.env.idx_to_node[self.goal_node_idx]
-        goal_sim = np.array(self.env.node_pose_dict[goal_node])
-        goal_vicon = self._sim_to_vicon(goal_sim)
+        if self._acl_goal_vicon is not None:
+            goal_vicon = self._acl_goal_vicon
+        else:
+            goal_node = self.env.idx_to_node[self.goal_node_idx]
+            goal_sim = np.array(self.env.node_pose_dict[goal_node])
+            goal_vicon = self._sim_to_vicon(goal_sim)
         dist = np.linalg.norm(np.array([p.x, p.y]) - goal_vicon)
 
         if self._waiting_to_depart:
@@ -626,10 +651,13 @@ class RoverNode(Node):
         self.current_node_idx = current_node_idx
         self.goal_node_idx = next_node_idx
 
-        # Convert next node: sim → Vicon → local map frame
+        # Convert next node: sim → Vicon, then snap to nearest ACL node if available
         next_node = self.env.idx_to_node[next_node_idx]
         sim_xy = np.array(self.env.node_pose_dict[next_node])
         vicon_xy = self._sim_to_vicon(sim_xy)
+        if self._acl_positions is not None:
+            vicon_xy = self._nearest_acl_vicon(vicon_xy)
+        self._acl_goal_vicon = vicon_xy
         vicon_pt = np.array([vicon_xy[0], vicon_xy[1], self.goal_height, 1.0])
 
         if not self.use_mocap:

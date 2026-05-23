@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
-from ctf_rover.graph_generator import generate_graph, nx_to_marker_data
+from ctf_rover.graph_generator import generate_graph, load_acl_graph, nx_to_marker_data
 import numpy as np
 
 class PublishGraph(Node):
@@ -12,13 +12,19 @@ class PublishGraph(Node):
         self.graph_pub = self.create_publisher(Marker, 'ctf_graph', 10)
         self.timer = self.create_timer(0.1, self.publish_graph)
 
-        G_map, flag_nodes = generate_graph()
+        self.declare_parameter("acl_graph_pkl_path", "")
+        pkl_path = self.get_parameter("acl_graph_pkl_path").value
 
-        self.flag_idx = 1
-
-        self.nodes, self.edges, self.flag = nx_to_marker_data(G_map, flag_nodes[self.flag_idx])
-
-        self.frame_id = "sim" # vicon frame
+        if pkl_path:
+            G_map = load_acl_graph(pkl_path)
+            self.nodes, self.edges, self.flag = nx_to_marker_data(G_map)
+            self.frame_id = "world"
+            self.get_logger().info(f"ACL graph loaded: {len(self.nodes)} nodes, frame=world")
+        else:
+            G_map, flag_nodes = generate_graph()
+            self.flag_idx = 1
+            self.nodes, self.edges, self.flag = nx_to_marker_data(G_map, flag_nodes[self.flag_idx])
+            self.frame_id = "sim"
 
     def publish_graph(self):
 
@@ -88,38 +94,33 @@ class PublishGraph(Node):
         # publish edges
         self.graph_pub.publish(edge_marker)
 
-        # create flag markers
-        flag_marker = Marker()
-        flag_marker.header.frame_id = self.frame_id
-        flag_marker.header.stamp = self.get_clock().now().to_msg()
+        if self.flag is not None:
+            flag_marker = Marker()
+            flag_marker.header.frame_id = self.frame_id
+            flag_marker.header.stamp = self.get_clock().now().to_msg()
 
-        flag_marker.ns = "ctf_flag"
-        flag_marker.id = 2
-        flag_marker.type = Marker.CYLINDER
-        flag_marker.action = Marker.ADD
+            flag_marker.ns = "ctf_flag"
+            flag_marker.id = 2
+            flag_marker.type = Marker.CYLINDER
+            flag_marker.action = Marker.ADD
 
-        flag_marker.scale.x = 0.2
-        flag_marker.scale.y = 0.2
-        height = 2.0
-        flag_marker.scale.z = height # height
+            flag_marker.scale.x = 0.2
+            flag_marker.scale.y = 0.2
+            height = 2.0
+            flag_marker.scale.z = height
 
-        flag_marker.color.r = 1.0
-        flag_marker.color.g = 0.0
-        flag_marker.color.b = 0.0
-        flag_marker.color.a = 1.0
+            flag_marker.color.r = 1.0
+            flag_marker.color.g = 0.0
+            flag_marker.color.b = 0.0
+            flag_marker.color.a = 1.0
 
-        # flag location
-        flag_marker.pose.position.x = float(self.flag[0])
-        flag_marker.pose.position.y = float(self.flag[1])
-        flag_marker.pose.position.z = height/2  
+            flag_marker.pose.position.x = float(self.flag[0])
+            flag_marker.pose.position.y = float(self.flag[1])
+            flag_marker.pose.position.z = height / 2
 
-        flag_marker.pose.orientation.x = 0.0
-        flag_marker.pose.orientation.y = 0.0
-        flag_marker.pose.orientation.z = 0.0
-        flag_marker.pose.orientation.w = 1.0
+            flag_marker.pose.orientation.w = 1.0
 
-        # publish nodes
-        self.graph_pub.publish(flag_marker)
+            self.graph_pub.publish(flag_marker)
 
 def main(args=None):
     rclpy.init(args=args)

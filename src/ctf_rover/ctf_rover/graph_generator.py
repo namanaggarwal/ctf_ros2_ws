@@ -1,3 +1,4 @@
+import pickle
 import numpy as np
 import networkx as nx
 from ctf_rover.customCTF import *
@@ -19,7 +20,17 @@ def generate_graph():
 
     return G_map, flag_nodes
 
-def nx_to_marker_data(G, flag):
+
+def load_acl_graph(pkl_path: str):
+    """Load the ACL lidar-scan graph. Sets each node's pos = (x, y) in Vicon metres."""
+    with open(pkl_path, 'rb') as f:
+        G = pickle.load(f)
+    for _, data in G.nodes(data=True):
+        data['pos'] = (data['x'], data['y'])
+    return G
+
+
+def nx_to_marker_data(G, flag=None):
     node_pose_dict = nx.get_node_attributes(G, 'pos')
 
     nodes = []
@@ -35,4 +46,5 @@ def nx_to_marker_data(G, flag):
     for u, v in G.edges():
         edges.append((node_index[u], node_index[v]))
 
-    return nodes, edges, node_pose_dict[flag]
+    flag_pos = node_pose_dict[flag] if flag is not None else None
+    return nodes, edges, flag_pos
