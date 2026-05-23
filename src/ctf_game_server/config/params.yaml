@@ -5,4 +5,4 @@ game_server:
     total_rovers: 6
     seed: 41
     ctf_player_config: "3v3"
-    use_dlio: False
+    use_dlio: True

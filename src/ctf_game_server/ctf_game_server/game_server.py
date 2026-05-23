@@ -53,6 +53,7 @@ class GameServer(Node):
         self.use_dlio = self.get_parameter("use_dlio").value
 
         self.get_logger().info(f"TOTAL ROVERS {self.total_rovers}")
+        self.get_logger().info(f"USE DLIO = {self.use_dlio}")
 
         # Subscriptions for each rover pose from VICON
         # (You can generate these dynamically)
@@ -450,9 +451,9 @@ class GameServer(Node):
         if rover_team_name.startswith('R'): self.num_agents_red_team += 1
         elif rover_team_name.startswith('B'): self.num_agents_blue_team += 1
 
-        # get transform world to map
-        if self.use_dlio:
-            X_world_map = self.initialize_tf(rover_name)
+        # # get transform world to map
+        # if self.use_dlio:
+        #     X_world_map = self.initialize_tf(rover_name)
 
         # add rover info to the game
         self.rovers_list.append(rover_name)
@@ -462,8 +463,8 @@ class GameServer(Node):
             'server_to_rover_topic': server_to_rover_topic,
             'ctf_agent_name': self.rr_to_ctf_agent_map[rover_name],
         }
-        if self.use_dlio:
-            self.rovers_info[rover_name]['X_world_map'] = X_world_map
+        # if self.use_dlio:
+        #     self.rovers_info[rover_name]['X_world_map'] = X_world_map
         self.rovers_state[rover_name] = {
             'pose': [],
             'last_seen': []
@@ -907,42 +908,48 @@ class GameServer(Node):
     # convert dlio pose to the vicon (global) frame and save it for each rover
     def dlio_callback(self, msg, name):
 
-        X_world_map = self.rovers_info[name]["X_world_map"]
+        # X_world_map = self.rovers_info[name]["X_world_map"]
 
         p = msg.pose.pose.position
         q = msg.pose.pose.orientation
 
-        local_point = np.array([p.x, p.y, p.z, 1.0])
-        q_local = np.array([q.x, q.y, q.z, q.w])
+        # local_point = np.array([p.x, p.y, p.z, 1.0])
+        # q_local = np.array([q.x, q.y, q.z, q.w])
 
-        global_point = self.X_world_map @ local_point #local pt is dlio
+        # global_point = self.X_world_map @ local_point #local pt is dlio
 
-        R_world_map = X_world_map[:3, :3]
-        q_world_map = R_scipy.from_matrix(R_world_map).as_quat()  
+        # R_world_map = X_world_map[:3, :3]
+        # q_world_map = R_scipy.from_matrix(R_world_map).as_quat()  
 
-        # get rotations
-        r_world_map = R_scipy.from_quat(q_world_map)
-        r_local = R_scipy.from_quat(q_local)
+        # # get rotations
+        # r_world_map = R_scipy.from_quat(q_world_map)
+        # r_local = R_scipy.from_quat(q_local)
 
-        r_global = r_world_map * r_local
-        global_orient = r_global.as_quat()
+        # r_global = r_world_map * r_local
+        # global_orient = r_global.as_quat()
+
+        # rover_pose = PoseStamped()
+
+        # rover_pose.pose.position.x = global_point[0]
+        # rover_pose.pose.position.y = global_point[1]
+        # rover_pose.pose.position.z = global_point[2]
+
+        # rover_pose.pose.orientation.x = global_orient[0]
+        # rover_pose.pose.orientation.y = global_orient[1]
+        # rover_pose.pose.orientation.z = global_orient[2]
+        # rover_pose.pose.orientation.w = global_orient[3]
 
         rover_pose = PoseStamped()
 
-        rover_pose.pose.position.x = global_point[0]
-        rover_pose.pose.position.y = global_point[1]
-        rover_pose.pose.position.z = global_point[2]
+        rover_pose.pose.position.x = p.x #global_point[0]
+        rover_pose.pose.position.y = p.y #global_point[1]
+        rover_pose.pose.position.z = p.z #global_point[2]
 
-        rover_pose.pose.orientation.x = global_orient[0]
-        rover_pose.pose.orientation.y = global_orient[1]
-        rover_pose.pose.orientation.z = global_orient[2]
-        rover_pose.pose.orientation.w = global_orient[3]
+        rover_pose.pose.orientation.x = q.x #global_orient[0]
+        rover_pose.pose.orientation.y = q.y #global_orient[1]
+        rover_pose.pose.orientation.z = q.z #global_orient[2]
+        rover_pose.pose.orientation.w = q.w #global_orient[3]
 
-        # v = global_planner_msg.vel # dlio msg
-        # local_vel = np.array([v.x, v.y, v.z])
-
-        # R_world_map = self.X_world_map[:3, :3]  # rotation only
-        # global_vel = R_world_map @ local_vel
         
     
 def main(args=None):
