@@ -15,6 +15,7 @@ from visualization_msgs.msg import Marker
 from nav_msgs.msg import Odometry
 import networkx as nx
 from geometry_msgs.msg import Point
+from scipy.spatial import ConvexHull
 
 import copy
 import numpy as np
@@ -270,6 +271,55 @@ class GameServer(Node):
 
             # publish nodes
             self.graph_pub.publish(flag_marker)
+
+            # shade flag region
+            nodes = np.array(graph_nodes)
+            flag_pos = np.array(flag)
+
+            # find closest node to flag
+            dists = np.linalg.norm(nodes - flag_pos, axis=1)
+            flag_node_idx = int(np.argmin(dists))
+
+            # build adjacency from edges
+            adjacency = {i: set() for i in range(len(nodes))}
+            for i, j in graph_edges:
+                adjacency[i].add(j)
+                adjacency[j].add(i)
+
+            # 1-hop neighbors
+            region_idxs = set([flag_node_idx]) | adjacency[flag_node_idx]
+            region_pts = nodes[list(region_idxs)]
+
+            if len(region_pts) >= 3:
+                hull = ConvexHull(region_pts)
+                hull_pts = region_pts[hull.vertices]
+
+                shade_marker = Marker()
+                shade_marker.header.frame_id = graph_frame_id
+                shade_marker.header.stamp = self.get_clock().now().to_msg()
+                shade_marker.ns = "flag_region"
+                shade_marker.id = 100
+                shade_marker.type = Marker.TRIANGLE_LIST
+                shade_marker.action = Marker.ADD
+                shade_marker.scale.x = shade_marker.scale.y = shade_marker.scale.z = 1.0
+                shade_marker.color.r = 1.0
+                shade_marker.color.g = 0.0
+                shade_marker.color.b = 0.0
+                shade_marker.color.a = 0.15  # light shading
+
+                # triangle fan from centroid
+                center = np.mean(hull_pts, axis=0)
+                for i in range(len(hull_pts)):
+                    p1 = hull_pts[i]
+                    p2 = hull_pts[(i + 1) % len(hull_pts)]
+                    for pt in [center, p1, p2]:
+                        p = Point()
+                        p.x = float(pt[0])
+                        p.y = float(pt[1])
+                        p.z = 0.0
+                        shade_marker.points.append(p)
+
+                self.graph_pub.publish(shade_marker)
     ################# END VISUALIZE GRAPH #################
 
     def clock_pub_cb(self):
