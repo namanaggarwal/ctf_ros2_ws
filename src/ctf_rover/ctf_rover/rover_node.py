@@ -220,7 +220,7 @@ class RoverNode(Node):
         text_marker.pose.position.x = -8.0
         self.get_logger().info(f"IDX = {self.team_index}")
 
-        offset = 0.0
+        offset = -2.0
         if self.rover_team_name.upper() == "BLUE":
             offset = 2.0
 
