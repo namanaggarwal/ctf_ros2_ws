@@ -819,7 +819,7 @@ class GraphCTFNeighborBatchPolicy_SubgraphCompatible_v4(ActorCriticPolicy):
        the critic a full-graph view regardless of local neighborhood size.
     """
 
-    def __init__(self, *args, use_attention: bool = False, **kwargs):
+    def __init__(self, *args, use_attention: bool = False, use_gru: bool = False, **kwargs):
         super().__init__(
             *args,
             **kwargs,
@@ -1924,8 +1924,9 @@ class GraphCTFMAPPOPolicy(GraphCTFNeighborBatchPolicy_SubgraphCompatible_v4):
 
     _GRU_H = 128  # GRU hidden size (fixed; change here if needed)
 
-    def __init__(self, *args, use_attention=False, use_gru=False, **kwargs):
+    def __init__(self, *args, use_attention=False, use_gru=False, n_agents: int = 2, **kwargs):
         super().__init__(*args, use_attention=use_attention, **kwargs)
+        self.n_agents = n_agents
         D = self.hidden_dim  # 64
         self.use_gru = use_gru
         self._h_buf  = None   # [B, GRU_H] persistent hidden state; lazy-init on first forward
@@ -2388,8 +2389,9 @@ class GraphCTFMAPPOPolicy_v4_hybrid(
     and replaced with per-agent MAPPO counterparts.
     """
 
-    def __init__(self, *args, use_attention: bool = False, use_gru: bool = False, **kwargs):
+    def __init__(self, *args, use_attention: bool = False, use_gru: bool = False, n_agents: int = 2, **kwargs):
         super().__init__(*args, use_attention=use_attention, **kwargs)
+        self.n_agents = n_agents
         D = self.hidden_dim  # 64
         # Remove parent's single-agent heads
         del self.node_mlp
@@ -2417,9 +2419,10 @@ class GraphCTFMAPPOPolicy_v2(
     Note: v2 does not accept use_attention; this class accepts use_gru only.
     """
 
-    def __init__(self, *args, use_gru: bool = False, **kwargs):
+    def __init__(self, *args, use_gru: bool = False, n_agents: int = 2, **kwargs):
         # v2 __init__ does not accept use_attention — do not forward it
         super().__init__(*args, **kwargs)
+        self.n_agents = n_agents
         D = 64  # v2 hardcodes hidden_dim locally (no self.hidden_dim attribute)
         # Remove parent's single-agent heads
         del self.node_mlp
