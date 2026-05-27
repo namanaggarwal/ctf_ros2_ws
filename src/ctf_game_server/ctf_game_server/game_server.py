@@ -38,12 +38,14 @@ _ACL_PKL_DEFAULT = os.path.normpath(os.path.join(_PKG_DIR, '..', 'acl_graph.pkl'
 # Headings: Blue faces East (0 rad), Red faces West (π rad).
 # ---------------------------------------------------------------------------
 _ACL_SPAWNS_3V3 = {
-    'Blue_0': ((-2.80,  5.80), 0.0),
-    'Blue_1': ((-4.90,  6.10), 0.0),
-    'Blue_2': ((-5.50,  4.90), 0.0),
-    'Red_0':  ((17.75,  4.90), np.pi),
-    'Red_1':  ((15.50,  4.90), np.pi),
-    'Red_2':  ((17.60,  3.85), np.pi),
+    # Blue team: left-of-centre cluster, facing East toward Red side (0 rad)
+    'Blue_0': (( 0.95,  3.85), 0.0),   # node 86
+    'Blue_1': (( 2.75,  3.10), 0.0),   # node 71
+    'Blue_2': (( 2.45,  4.75), 0.0),   # node 90
+    # Red team: right-of-centre cluster, facing West toward Blue side (π rad)
+    'Red_0':  (( 8.75,  3.25), np.pi), # node 51
+    'Red_1':  ((10.55,  2.95), np.pi), # node 50
+    'Red_2':  (( 9.50,  4.00), np.pi), # node 282
 }
 
 class GameServer(Node):
