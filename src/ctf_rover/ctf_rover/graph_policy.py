@@ -1751,11 +1751,13 @@ class LearnedPolicyWrapper:
         self.policy = self.model.policy
         self.policy.eval()
 
-        # Auto-detect MAPPO policy by presence of any per-agent actor head_1.
-        # GraphCTFMAPPOPolicy uses scoring_mlp_1; v4_hybrid and v2 use node_mlp_1.
+        # Auto-detect MAPPO policy by presence of any per-agent actor head.
+        # GraphCTFMAPPOPolicy uses scoring_mlp_1; v4_hybrid and v2 use actor_node_mlps (ModuleList).
         # When True, batch_action() injects agent_id + teammate_* before forward()
         # so each agent is routed through its correct per-agent head.
-        self._is_mappo = hasattr(self.policy, 'scoring_mlp_1') or hasattr(self.policy, 'node_mlp_1')
+        self._is_mappo = (hasattr(self.policy, 'scoring_mlp_1')
+                          or hasattr(self.policy, 'node_mlp_1')       # legacy flat naming
+                          or hasattr(self.policy, 'actor_node_mlps'))  # current ModuleList naming
         if self._is_mappo:
             print(f"  [LearnedPolicyWrapper] MAPPO policy detected — "
                   f"teammate obs injection enabled for opponent inference.")
@@ -2203,14 +2205,16 @@ class _MAPPOIndependentActorMixin:
             self.gru_1 = nn.GRUCell(input_size=D, hidden_size=self._GRU_H)
 
         # Independent per-agent neighbor scoring: h_nbr → scalar
-        self.node_mlp_0 = nn.Sequential(
-            nn.Linear(D, D), nn.ReLU(), nn.Linear(D, 1)
-        )
-        self.node_mlp_1 = nn.Sequential(
-            nn.Linear(D, D), nn.ReLU(), nn.Linear(D, 1)
-        )
-        self.extra_action_head_0 = nn.Linear(A, self.extra_action_dim)
-        self.extra_action_head_1 = nn.Linear(A, self.extra_action_dim)
+        # Named as ModuleLists to match checkpoint state_dict keys
+        # (actor_node_mlps.0.*, actor_node_mlps.1.*, extra_action_heads.0.*, ...)
+        self.actor_node_mlps = nn.ModuleList([
+            nn.Sequential(nn.Linear(D, D), nn.ReLU(), nn.Linear(D, 1)),
+            nn.Sequential(nn.Linear(D, D), nn.ReLU(), nn.Linear(D, 1)),
+        ])
+        self.extra_action_heads = nn.ModuleList([
+            nn.Linear(A, self.extra_action_dim),
+            nn.Linear(A, self.extra_action_dim),
+        ])
 
         # DeepSets centralized critic (same architecture as GraphCTFMAPPOPolicy)
         self.phi_net = nn.Sequential(
@@ -2261,10 +2265,10 @@ class _MAPPOIndependentActorMixin:
 
     def _compute_actor_logits(self, h_actor, neighbor_embeddings, neighbor_mask, agent_id):
         sel   = (agent_id == 0).to(h_actor.device)          # [B] bool
-        nbr_0 = self.node_mlp_0(neighbor_embeddings).squeeze(-1)   # [B, max_deg]
-        nbr_1 = self.node_mlp_1(neighbor_embeddings).squeeze(-1)
-        ext_0 = self.extra_action_head_0(h_actor)                   # [B, extra_dim]
-        ext_1 = self.extra_action_head_1(h_actor)
+        nbr_0 = self.actor_node_mlps[0](neighbor_embeddings).squeeze(-1)   # [B, max_deg]
+        nbr_1 = self.actor_node_mlps[1](neighbor_embeddings).squeeze(-1)
+        ext_0 = self.extra_action_heads[0](h_actor)                        # [B, extra_dim]
+        ext_1 = self.extra_action_heads[1](h_actor)
 
         nbr_logits   = torch.where(sel.unsqueeze(-1), nbr_0, nbr_1)
         nbr_logits   = nbr_logits.masked_fill(neighbor_mask == 0, float('-inf'))
@@ -2419,8 +2423,8 @@ class GraphCTFMAPPOPolicy_v2(
     Note: v2 does not accept use_attention; this class accepts use_gru only.
     """
 
-    def __init__(self, *args, use_gru: bool = False, n_agents: int = 2, **kwargs):
-        # v2 __init__ does not accept use_attention — do not forward it
+    def __init__(self, *args, use_attention: bool = False, use_gru: bool = False, n_agents: int = 2, **kwargs):
+        # v2 base does not accept use_attention — consume and discard it here
         super().__init__(*args, **kwargs)
         self.n_agents = n_agents
         D = 64  # v2 hardcodes hidden_dim locally (no self.hidden_dim attribute)
