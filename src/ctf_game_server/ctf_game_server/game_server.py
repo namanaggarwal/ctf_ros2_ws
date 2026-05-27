@@ -33,22 +33,22 @@ from customCTF import GraphCTF
 
 # Default ACL pkl path: acl_graph.pkl sits one directory above game_server.py
 _ACL_PKL_DEFAULT = os.path.normpath(os.path.join(_PKG_DIR, '..', 'acl_graph.pkl'))
-_ACL_PKL_DEFAULT = "/home/hamilton/Documents/urop/ctf/ctf_ros2_ws/src/ctf_game_server/acl_graph.pkl"
 
 # ---------------------------------------------------------------------------
 # Hard-coded 3v3 spawn positions for the ACL office map (Vicon metres).
-# Blue team: top-left corner  | Red team: top-right corner
+# Chosen via acl_graph_editor.ipynb; stored in acl_graph.pkl as
+# blue_spawn_nodes / red_spawn_nodes graph attributes.
 # Headings: Blue faces East (0 rad), Red faces West (π rad).
 # ---------------------------------------------------------------------------
 _ACL_SPAWNS_3V3 = {
-    # Blue team: left-of-centre cluster, facing East toward Red side (0 rad)
-    'Blue_0': (( 0.95,  3.85), 0.0),   # node 86
-    'Blue_1': (( 2.75,  3.10), 0.0),   # node 71
-    'Blue_2': (( 2.45,  4.75), 0.0),   # node 90
-    # Red team: right-of-centre cluster, facing West toward Blue side (π rad)
-    'Red_0':  (( 8.75,  3.25), np.pi), # node 51
-    'Red_1':  ((10.55,  2.95), np.pi), # node 50
-    'Red_2':  (( 9.50,  4.00), np.pi), # node 282
+    # Blue team — nodes [268, 270, 146], facing East toward Red side (0 rad)
+    'Blue_0': ((-5.800, -10.550), 0.0),   # node 268
+    'Blue_1': (( 3.950, -10.850), 0.0),   # node 270
+    'Blue_2': (( 6.800, -11.600), 0.0),   # node 146
+    # Red team — nodes [294, 265, 207], facing West toward Blue side (π rad)
+    'Red_0':  ((12.200, -11.150), np.pi), # node 294
+    'Red_1':  ((15.650, -12.200), np.pi), # node 265
+    'Red_2':  ((11.150, -12.350), np.pi), # node 207
 }
 
 class GameServer(Node):
