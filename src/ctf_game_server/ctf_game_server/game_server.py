@@ -29,6 +29,20 @@ if _PKG_DIR not in sys.path:
     sys.path.insert(0, _PKG_DIR)
 from customCTF import GraphCTF
 
+# ---------------------------------------------------------------------------
+# Hard-coded 3v3 spawn positions for the ACL office map (Vicon metres).
+# Blue team: top-left corner  | Red team: top-right corner
+# Headings: Blue faces East (0 rad), Red faces West (π rad).
+# ---------------------------------------------------------------------------
+_ACL_SPAWNS_3V3 = {
+    'Blue_0': ((-2.80,  5.80), 0.0),
+    'Blue_1': ((-4.90,  6.10), 0.0),
+    'Blue_2': ((-5.50,  4.90), 0.0),
+    'Red_0':  ((17.75,  4.90), np.pi),
+    'Red_1':  ((15.50,  4.90), np.pi),
+    'Red_2':  ((17.60,  3.85), np.pi),
+}
+
 class GameServer(Node):
     def __init__(self, **kwargs):
         super().__init__("ctf")
@@ -45,12 +59,16 @@ class GameServer(Node):
         self.declare_parameter("tag_radius", 0.55)
         self.declare_parameter("tag_angle_tolerance", 0.785)  # ~45 degrees
         self.declare_parameter("tag_cooldown", 10.0)
+        self.declare_parameter("acl_graph_pkl_path", "")
+        self.declare_parameter("fixed_flag_hypothesis", 1)
 
         self.goal_height = self.get_parameter("goal_height").value
         self.total_rovers = self.get_parameter("total_rovers").value
         self._seed = self.get_parameter("seed").value
         self.ctf_player_config = self.get_parameter("ctf_player_config").value
         self.use_dlio = self.get_parameter("use_dlio").value
+        _acl_pkl = self.get_parameter("acl_graph_pkl_path").value
+        self._use_acl_mode = bool(_acl_pkl)
 
         self.get_logger().info(f"TOTAL ROVERS {self.total_rovers}")
         self.get_logger().info(f"USE DLIO = {self.use_dlio}")
@@ -75,15 +93,47 @@ class GameServer(Node):
         self.ctf_blue_agents = ['Blue_0', 'Blue_1', 'Blue_2']
         self.rr_to_ctf_agent_map = {}
 
-        # GraphCTF env — used for spawn position generation only (env.step() never called)
-        self.ctf_env = GraphCTF(
-            ctf_player_config=self.ctf_player_config,
-            fixed_flag_hypothesis=1,
-            obs_version=3,
-            seed=self._seed,
-            map_variant="highbay"
-        )
-        self.get_logger().info("GraphCTF environment initialised for spawn generation.")
+        # GraphCTF env — used for spawn / respawn position generation only.
+        # Skipped in ACL mode; hard-coded Vicon spawn positions are used instead.
+        if not self._use_acl_mode:
+            self.ctf_env = GraphCTF(
+                ctf_player_config=self.ctf_player_config,
+                fixed_flag_hypothesis=1,
+                obs_version=3,
+                seed=self._seed,
+                map_variant="highbay"
+            )
+            self.get_logger().info("GraphCTF environment initialised for spawn generation.")
+        else:
+            self.ctf_env = None
+            self.get_logger().info(
+                "ACL mode active — using hard-coded 3v3 Vicon spawn positions; "
+                "GraphCTF not initialised."
+            )
+            # Load flag hypothesis positions from the ACL pkl.
+            import pickle as _pickle
+            fh_idx = self.get_parameter("fixed_flag_hypothesis").value
+            try:
+                with open(_acl_pkl, 'rb') as _f:
+                    _acl_g = _pickle.load(_f)
+                fh_nodes = _acl_g.graph.get('flag_hypothesis_nodes', [])
+                if fh_nodes:
+                    fh_node = fh_nodes[fh_idx % len(fh_nodes)]
+                    _d = _acl_g.nodes[fh_node]
+                    self._acl_flag_vicon = np.array([_d['x'], _d['y']])
+                    self.get_logger().info(
+                        f"ACL flag hypothesis {fh_idx} → node {fh_node} "
+                        f"at vicon=({_d['x']:.2f}, {_d['y']:.2f})"
+                    )
+                else:
+                    self._acl_flag_vicon = None
+                    self.get_logger().warn(
+                        "ACL graph has no 'flag_hypothesis_nodes' attribute — "
+                        "flag marker will not be published."
+                    )
+            except Exception as e:
+                self._acl_flag_vicon = None
+                self.get_logger().error(f"Failed to load ACL flag hypotheses: {e}")
 
         self.global_frame = "world"
         self.tf_buffer = tf2_ros.Buffer()
@@ -154,8 +204,40 @@ class GameServer(Node):
 
         return nodes, edges, node_pose_dict[flag]
 
+    def _publish_acl_flag_marker(self):
+        """Publish a flag cylinder at the active ACL flag hypothesis position."""
+        if self._acl_flag_vicon is None:
+            return
+        fx, fy = float(self._acl_flag_vicon[0]), float(self._acl_flag_vicon[1])
+        height = 2.0
+
+        flag_marker = Marker()
+        flag_marker.header.frame_id = "world"
+        flag_marker.header.stamp = self.get_clock().now().to_msg()
+        flag_marker.ns = "ctf_flag"
+        flag_marker.id = 2
+        flag_marker.type = Marker.CYLINDER
+        flag_marker.action = Marker.ADD
+        flag_marker.scale.x = 0.2
+        flag_marker.scale.y = 0.2
+        flag_marker.scale.z = height
+        flag_marker.color.r = 1.0
+        flag_marker.color.g = 0.0
+        flag_marker.color.b = 0.0
+        flag_marker.color.a = 1.0
+        flag_marker.pose.position.x = fx
+        flag_marker.pose.position.y = fy
+        flag_marker.pose.position.z = height / 2.0
+        flag_marker.pose.orientation.w = 1.0
+        self.graph_pub.publish(flag_marker)
+
     # publish graph
     def graph_pub_cb(self):
+        # ACL mode: graph nodes/edges are published by the publish_real_graph node;
+        # we only publish the active flag hypothesis marker here.
+        if self._use_acl_mode:
+            self._publish_acl_flag_marker()
+            return
 
         # TODO much of this can be initialized once as instance variables
         if hasattr(self.ctf_env, '_bc') and self.ctf_env._bc is not None:
@@ -566,71 +648,60 @@ class GameServer(Node):
 
     def start_game_callback(self):
         # Send initial commanded poses to start the game.
-        # Wait for response.
         self.get_logger().info("[GAMESERVER] All rovers joined. Sending initial poses...")
-        state = self.compute_initial_poses()  # method to define starting positions
 
-        for ctf_agent, pose in state.items():
+        # Build a list of (ctf_agent, vicon_pos_3d, vicon_heading_rad) to send.
+        if self._use_acl_mode:
+            # ACL map: hard-coded Vicon spawn positions, no sim→Vicon conversion.
+            spawn_list = []
+            for ctf_agent, (xy, hdg) in _ACL_SPAWNS_3V3.items():
+                if ctf_agent not in self.ctf_agent_to_rr_map:
+                    continue  # agent not in this game session
+                p_vicon_pos = np.array([xy[0], xy[1], 0.0])
+                spawn_list.append((ctf_agent, p_vicon_pos, hdg))
+        else:
+            state = self.compute_initial_poses()
+            spawn_list = []
+            for ctf_agent, pose in state.items():
+                sim_x, sim_y = pose
+                # Blue faces +y in sim (heading=2=North), Red faces -y (heading=6=South)
+                sim_heading = 2 if ctf_agent.startswith('Blue') else 6
+                p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(
+                    sim_x, sim_y, sim_heading
+                )
+                spawn_list.append((ctf_agent, p_vicon_pos, p_vicon_heading))
+
+        for ctf_agent, p_vicon_pos, p_vicon_heading in spawn_list:
             self.get_logger().info(f"AGENT = {ctf_agent}")
             rr_name = self.ctf_agent_to_rr_map[ctf_agent]
-            msg = ServerToRoverMessage()
-            msg.command = 'INIT'
-            msg.roster_rover_names = list(self.rr_to_ctf_agent_map.keys())
-            msg.roster_ctf_agent_names = list(self.rr_to_ctf_agent_map.values())
-
-            if self.DEBUG_INIT_POSE:
-                self.get_logger().info(f"[DEBUG INIT POSE] Received init pose for {ctf_agent}: {pose}")
-
-            sim_x, sim_y = pose
-            # Blue faces +y in sim (heading=2=North), Red faces -y in sim (heading=6=South)
-            sim_heading = 2 if ctf_agent.startswith('Blue') else 6
-            p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(sim_x, sim_y, sim_heading)
-            q = GameServer.yaw_to_quaternion(p_vicon_heading)
 
             vel_vicon_xy = np.array([np.cos(p_vicon_heading), np.sin(p_vicon_heading)])
-            
+            eps_vel = 0.001
+
             goal_msg = State()
-            # set position
             goal_msg.pos.x = p_vicon_pos[0]
             goal_msg.pos.y = p_vicon_pos[1]
-            goal_msg.pos.z = self.goal_height #0.5 #p_vicon_pos[2]
-
-            eps_vel = 0.001
-            # set velocity
-            goal_msg.vel.x = eps_vel*vel_vicon_xy[0]
-            goal_msg.vel.y = eps_vel*vel_vicon_xy[1]
+            goal_msg.pos.z = self.goal_height
+            goal_msg.vel.x = eps_vel * vel_vicon_xy[0]
+            goal_msg.vel.y = eps_vel * vel_vicon_xy[1]
             goal_msg.vel.z = 0.
-
-            # identity
             goal_msg.quat.x = 0.0
             goal_msg.quat.y = 0.0
             goal_msg.quat.z = 0.0
             goal_msg.quat.w = 1.0
 
+            msg = ServerToRoverMessage()
+            msg.command = 'INIT'
+            msg.roster_rover_names = list(self.rr_to_ctf_agent_map.keys())
+            msg.roster_ctf_agent_names = list(self.rr_to_ctf_agent_map.values())
             msg.commanded_goal = goal_msg
-            """
-            pose_msg = PoseStamped()
-            pose_msg.header.stamp = self.get_clock().now().to_msg()
-            pose_msg.header.frame_id = "world"
 
-            pose_msg.pose.position.x = p_vicon_pos[0]
-            pose_msg.pose.position.y = p_vicon_pos[1]
-            pose_msg.pose.position.z = p_vicon_pos[2] # equal to 0.
-
-            pose_msg.pose.orientation.x = q[0]
-            pose_msg.pose.orientation.y = q[1]
-            pose_msg.pose.orientation.z = q[2]
-            pose_msg.pose.orientation.w = q[3]
-            
-            msg.commanded_pose = pose_msg
-            """
             self.server_to_rover_publishers[rr_name].publish(msg)
             self.publish_marker(p_vicon_pos, rr_name)
-            self.get_logger().info(f"[GAMESERVER] Sent initial pose (vicon frame) {p_vicon_pos} to {rr_name}")
+            self.get_logger().info(
+                f"[GAMESERVER] Sent initial pose (vicon frame) {p_vicon_pos} to {rr_name}"
+            )
 
-
-        # Wait for confirmation from rovers or add a short delay
-        # Then mark game as started
         self.game_started = True
         self.get_logger().info("[GAMESERVER] Game started!")
 
@@ -638,7 +709,6 @@ class GameServer(Node):
         self.clock_text_timer_period = 0.1
         self.start_time = self.get_clock().now()
         self.clock_pub = self.create_timer(self.clock_text_timer_period, self.clock_pub_cb)
-        
         return
     
     def compute_initial_poses(self):
@@ -875,17 +945,30 @@ class GameServer(Node):
     def _send_respawn(self, tagged_rr_name: str):
         """Send a RESPAWN command to the tagged rover with a sampled respawn position."""
         team = self.rovers_info[tagged_rr_name]['team']  # 'RED' or 'BLUE'
-        sim_x, sim_y = self._sample_respawn_sim(team)
-        sim_heading = 6 if team.upper().startswith('R') else 2
-        p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(sim_x, sim_y, sim_heading)
+
+        if self._use_acl_mode:
+            # ACL map: randomly pick one of the team's 3 hard-coded spawn positions.
+            if team.upper().startswith('R'):
+                candidates = ['Red_0', 'Red_1', 'Red_2']
+            else:
+                candidates = ['Blue_0', 'Blue_1', 'Blue_2']
+            chosen = candidates[np.random.randint(len(candidates))]
+            xy, p_vicon_heading = _ACL_SPAWNS_3V3[chosen]
+            p_vicon_pos = np.array([xy[0], xy[1], 0.0])
+        else:
+            sim_x, sim_y = self._sample_respawn_sim(team)
+            sim_heading = 6 if team.upper().startswith('R') else 2
+            p_vicon_pos, p_vicon_heading = self.sim_frame_to_vicon_frame(
+                sim_x, sim_y, sim_heading
+            )
 
         vel_vicon_xy = np.array([np.cos(p_vicon_heading), np.sin(p_vicon_heading)])
+        eps_vel = 0.001
 
         goal_msg = State()
         goal_msg.pos.x = p_vicon_pos[0]
         goal_msg.pos.y = p_vicon_pos[1]
         goal_msg.pos.z = self.goal_height
-        eps_vel = 0.001
         goal_msg.vel.x = eps_vel * vel_vicon_xy[0]
         goal_msg.vel.y = eps_vel * vel_vicon_xy[1]
         goal_msg.vel.z = 0.0
