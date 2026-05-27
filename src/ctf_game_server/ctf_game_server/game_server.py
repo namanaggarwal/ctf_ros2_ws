@@ -16,7 +16,9 @@ from nav_msgs.msg import Odometry
 import networkx as nx
 from geometry_msgs.msg import Point
 from scipy.spatial import ConvexHull
+from ctf_rover.graph_generator import generate_graph, load_acl_graph, nx_to_marker_data
 
+import pickle
 import copy
 import numpy as np
 from std_msgs.msg import String
@@ -31,6 +33,7 @@ from customCTF import GraphCTF
 
 # Default ACL pkl path: acl_graph.pkl sits one directory above game_server.py
 _ACL_PKL_DEFAULT = os.path.normpath(os.path.join(_PKG_DIR, '..', 'acl_graph.pkl'))
+_ACL_PKL_DEFAULT = "/home/hamilton/Documents/urop/ctf/ctf_ros2_ws/src/ctf_game_server/acl_graph.pkl"
 
 # ---------------------------------------------------------------------------
 # Hard-coded 3v3 spawn positions for the ACL office map (Vicon metres).
@@ -175,7 +178,15 @@ class GameServer(Node):
         # publish graph every 1.0 seconds
         self.graph_timer_period = 1.0
         self.graph_pub = self.create_publisher(Marker, 'ctf_graph', 10)
-        self.graph_pub_timer = self.create_timer(self.graph_timer_period, self.graph_pub_cb)
+
+        if not self._use_acl_mode:
+            self.graph_pub_timer = self.create_timer(self.graph_timer_period, self.graph_pub_cb)
+        else:
+            self.G_map = load_acl_graph(_acl_pkl)
+            self.nodes, self.edges, self.flag = nx_to_marker_data(self.G_map)
+            self.graph_frame_id = "world" # "/RR01/map"
+            self.get_logger().info(f"ACL graph loaded: {len(self.nodes)} nodes, frame=world")
+            self.graph_pub_timer = self.create_timer(self.graph_timer_period, self.publish_graph)
 
         # clock publisher
         self.text_marker_pub = self.create_publisher(Marker, f"/clock_text", 10)
@@ -191,7 +202,7 @@ class GameServer(Node):
     
     ################# BEGIN VISUALIZE GRAPH #################
     # convert networkx to nodes, edges for markers
-    def nx_to_marker_data(self, G, flag):
+    def nx_to_marker_data(self, G, flag = None):
         node_pose_dict = nx.get_node_attributes(G, 'pos')
 
         nodes = []
@@ -207,7 +218,11 @@ class GameServer(Node):
         for u, v in G.edges():
             edges.append((node_index[u], node_index[v]))
 
+        if flag is None:
+            return nodes, edges
+
         return nodes, edges, node_pose_dict[flag]
+
 
     def _publish_acl_flag_marker(self):
         """Publish a flag cylinder at the active ACL flag hypothesis position."""
@@ -235,6 +250,103 @@ class GameServer(Node):
         flag_marker.pose.position.z = height / 2.0
         flag_marker.pose.orientation.w = 1.0
         self.graph_pub.publish(flag_marker)
+    
+    # publish graph acl
+    def publish_graph(self):
+
+        # create node markers
+        node_marker = Marker()
+        node_marker.header.frame_id = self.graph_frame_id
+        node_marker.header.stamp = self.get_clock().now().to_msg()
+
+        node_marker.ns = "ctf_graph_nodes"
+        node_marker.id = 0
+        node_marker.type = Marker.SPHERE_LIST
+        node_marker.action = Marker.ADD
+
+        node_marker.scale.x = 0.1  # point width
+        node_marker.scale.y = 0.1
+        node_marker.scale.z = 0.1
+
+        node_marker.color.r = 1.0
+        node_marker.color.g = 1.0
+        node_marker.color.b = 0.0
+        node_marker.color.a = 1.0
+
+        # iterate through graph and publish nodes
+        for x, y in self.nodes:
+
+            # point for each node
+            p = Point()
+            p.x = float(x)
+            p.y = float(y)
+            p.z = 0.0
+            node_marker.points.append(p)
+
+        # publish nodes
+        self.graph_pub.publish(node_marker)
+
+        # create edge markers
+        edge_marker = Marker()
+        edge_marker.header.frame_id = self.graph_frame_id
+        edge_marker.header.stamp = self.get_clock().now().to_msg()
+
+        edge_marker.ns = "ctf_graph_nodes"
+        edge_marker.id = 1
+        edge_marker.type = Marker.LINE_LIST
+        edge_marker.action = Marker.ADD
+
+        edge_marker.scale.x = 0.05
+
+        edge_marker.color.r = 1.0
+        edge_marker.color.g = 1.0
+        edge_marker.color.b = 0.0
+        edge_marker.color.a = 0.1
+
+        for i, j in self.edges:
+            p1 = Point()
+            p1.x = float(self.nodes[i][0])
+            p1.y = float(self.nodes[i][1])
+            p1.z = 0.0
+
+            p2 = Point()
+            p2.x = float(self.nodes[j][0])
+            p2.y = float(self.nodes[j][1])
+            p2.z = 0.0
+
+            edge_marker.points.append(p1)
+            edge_marker.points.append(p2)
+
+        # publish edges
+        self.graph_pub.publish(edge_marker)
+
+        if self.flag is not None:
+            flag_marker = Marker()
+            flag_marker.header.frame_id = self.graph_frame_id
+            flag_marker.header.stamp = self.get_clock().now().to_msg()
+
+            flag_marker.ns = "ctf_flag"
+            flag_marker.id = 2
+            flag_marker.type = Marker.CYLINDER
+            flag_marker.action = Marker.ADD
+
+            flag_marker.scale.x = 0.2
+            flag_marker.scale.y = 0.2
+            height = 2.0
+            flag_marker.scale.z = height
+
+            flag_marker.color.r = 1.0
+            flag_marker.color.g = 0.0
+            flag_marker.color.b = 0.0
+            flag_marker.color.a = 1.0
+
+            flag_marker.pose.position.x = float(self.flag[0])
+            flag_marker.pose.position.y = float(self.flag[1])
+            flag_marker.pose.position.z = height / 2
+
+            flag_marker.pose.orientation.w = 1.0
+
+            self.graph_pub.publish(flag_marker)
 
     # publish graph
     def graph_pub_cb(self):
