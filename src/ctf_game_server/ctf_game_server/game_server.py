@@ -29,6 +29,9 @@ if _PKG_DIR not in sys.path:
     sys.path.insert(0, _PKG_DIR)
 from customCTF import GraphCTF
 
+# Default ACL pkl path: acl_graph.pkl sits one directory above game_server.py
+_ACL_PKL_DEFAULT = os.path.normpath(os.path.join(_PKG_DIR, '..', 'acl_graph.pkl'))
+
 # ---------------------------------------------------------------------------
 # Hard-coded 3v3 spawn positions for the ACL office map (Vicon metres).
 # Blue team: top-left corner  | Red team: top-right corner
@@ -59,7 +62,7 @@ class GameServer(Node):
         self.declare_parameter("tag_radius", 0.55)
         self.declare_parameter("tag_angle_tolerance", 0.785)  # ~45 degrees
         self.declare_parameter("tag_cooldown", 10.0)
-        self.declare_parameter("acl_graph_pkl_path", "")
+        self.declare_parameter("acl_graph_pkl_path", _ACL_PKL_DEFAULT)
         self.declare_parameter("fixed_flag_hypothesis", 1)
 
         self.goal_height = self.get_parameter("goal_height").value
@@ -68,7 +71,7 @@ class GameServer(Node):
         self.ctf_player_config = self.get_parameter("ctf_player_config").value
         self.use_dlio = self.get_parameter("use_dlio").value
         _acl_pkl = self.get_parameter("acl_graph_pkl_path").value
-        self._use_acl_mode = bool(_acl_pkl)
+        self._use_acl_mode = bool(_acl_pkl) and os.path.isfile(_acl_pkl)
 
         self.get_logger().info(f"TOTAL ROVERS {self.total_rovers}")
         self.get_logger().info(f"USE DLIO = {self.use_dlio}")
