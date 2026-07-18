@@ -69,6 +69,7 @@ class GameServer(Node):
         self.declare_parameter("tag_cooldown", 10.0)
         self.declare_parameter("acl_graph_pkl_path", _ACL_PKL_DEFAULT)
         self.declare_parameter("fixed_flag_hypothesis", 1)
+        self.declare_parameter("use_hardware", False)
 
         self.goal_height = self.get_parameter("goal_height").value
         self.total_rovers = self.get_parameter("total_rovers").value
@@ -77,6 +78,7 @@ class GameServer(Node):
         self.use_dlio = self.get_parameter("use_dlio").value
         _acl_pkl = self.get_parameter("acl_graph_pkl_path").value
         self._use_acl_mode = bool(_acl_pkl) and os.path.isfile(_acl_pkl)
+        self.use_hardware = self.get_parameter("use_hardware").value
 
         self.get_logger().info(f"TOTAL ROVERS {self.total_rovers}")
         self.get_logger().info(f"USE DLIO = {self.use_dlio}")
@@ -722,7 +724,7 @@ class GameServer(Node):
         rover_name: str, used for marker namespace
         """
         marker = Marker()
-        marker.header.frame_id = "world"
+        marker.header.frame_id = "world" if self.use_hardware else "map"
         marker.header.stamp = self.get_clock().now().to_msg()
         
         marker.ns = rover_name

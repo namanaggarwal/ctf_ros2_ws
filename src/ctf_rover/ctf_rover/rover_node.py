@@ -44,9 +44,11 @@ class RoverNode(Node):
         self.declare_parameter("arrival_tolerance", 0.5)
         self.declare_parameter("tag_radius", 0.55)
         self.declare_parameter("tag_angle_tolerance", 0.785)  # ~45 degrees
+        self.declare_parameter("use_hardware", False)
 
         self.rover_team_name = self.get_parameter("team").value
         self.arrival_tolerance = self.get_parameter("arrival_tolerance").value
+        self.use_hardware = self.get_parameter("use_hardware").value
 
         # Roster and CTF agent identity — built from the server's INIT message.
         # Not available at startup; populated in server_to_rover_callback.
@@ -55,7 +57,7 @@ class RoverNode(Node):
         self.team_index = None
 
         self.get_logger().info(
-            f"Rover {self.rover_name} | team={self.rover_team_name} | waiting for INIT roster"
+            f"Rover {self.rover_name} | team={self.rover_team_name} | hw={self.use_hardware} | waiting for INIT roster"
         )
 
         # Join game service
@@ -80,6 +82,10 @@ class RoverNode(Node):
         )
 
         self.use_mocap = True
+        # TF transform (world -> rover/map) is only needed when we're on real hardware
+        # AND not getting ground-truth pose from mocap. Sim and hardware+mocap both
+        # already have ground-truth pose, so they skip the transform.
+        self.needs_tf_transform = self.use_hardware and not self.use_mocap
 
         # Publisher to report tag events to the game server
         self._tag_event_pub = self.create_publisher(String, "/ctf/tag_event", 10)
@@ -97,9 +103,9 @@ class RoverNode(Node):
         self.X_map_world = None
         self.global_frame = "world"
         self.initial_frame = self.rover_name
-        self.local_frame = f"{self.rover_name}/map"
+        self.local_frame = f"{self.rover_name}/map" if self.use_hardware else 'map'
 
-        if not self.use_mocap:
+        if self.needs_tf_transform:
             self.init_timer = self.create_timer(0.2, self.initialize_tf)
 
         # World-state: populated once the server's INIT roster arrives
@@ -263,7 +269,7 @@ class RoverNode(Node):
 
             self.text_publisher(f"{self.rover_name}: INIT")
 
-            if not self.use_mocap:
+            if self.needs_tf_transform:
                 self.initialize_tf()
 
             goal = msg.commanded_goal
@@ -274,7 +280,7 @@ class RoverNode(Node):
 
             global_point = np.array([p.x, p.y, p.z, 1.0])
 
-            if not self.use_mocap:
+            if self.needs_tf_transform:
                 local_point = self.X_map_world @ global_point
 
                 v = goal.vel
@@ -317,7 +323,7 @@ class RoverNode(Node):
 
             global_point = np.array([p.x, p.y, p.z, 1.0])
 
-            if not self.use_mocap:
+            if self.needs_tf_transform:
                 local_point = self.X_map_world @ global_point
             else:
                 local_point = global_point
@@ -610,7 +616,7 @@ class RoverNode(Node):
         if not self.policy_ready:
             self.get_logger().warn("policy_step called but policy not ready.")
             return
-        if not self.use_mocap and self.X_map_world is None:
+        if self.needs_tf_transform and self.X_map_world is None:
             self.get_logger().warn("policy_step called but TF not ready.")
             return
 
@@ -660,7 +666,7 @@ class RoverNode(Node):
         self._acl_goal_vicon = vicon_xy
         vicon_pt = np.array([vicon_xy[0], vicon_xy[1], self.goal_height, 1.0])
 
-        if not self.use_mocap:
+        if self.needs_tf_transform:
             local_pt = self.X_map_world @ vicon_pt
         else:
             local_pt = vicon_pt
